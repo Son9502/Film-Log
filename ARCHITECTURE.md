@@ -144,7 +144,7 @@ There is no timestamp-based conflict resolution: remote rows overwrite local row
 ### Scans (media)
 - Scans are uploaded to the private `scans` bucket at `{userId}/{rollId}/{shotId}.{ext}`. The storage path is saved in `shots.scan_uri`.
 - Scans are displayed through **signed URLs with a 1-hour expiry** (`getScanUrl`).
-- Bulk import uses a ZIP: `react-native-zip-archive` on native (`roll/import.tsx`) and `fflate` in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
+- Bulk import uses a ZIP, unpacked with `fflate` on both platforms: synchronously on native (`roll/import.tsx`, which has no Web Workers) and asynchronously in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
 - Avatars go to the **public** `avatars` bucket at `{userId}/avatar.{ext}` and are served with public URLs.
 
 ### Location
@@ -194,7 +194,7 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 ## 7. Cross-platform strategy
 
 - **Platform files:** Expo Router resolves `*.web.tsx` ahead of `*.tsx` on web (e.g. `roll/import.web.tsx`).
-- **Module stubs:** `metro.config.js` redirects `react-native-maps`, `react-native-zip-archive`, and `react-native-share` to `src/mocks/*.web.js` on web.
+- **Module stubs:** `metro.config.js` redirects `react-native-maps` to `src/mocks/react-native-maps.web.js` on web.
 - **Dialogs:** `Alert.alert` is a no-op on web, so screens use an inline "confirm" state instead.
 - **Auth on web:** `detectSessionInUrl` is enabled only on web, so password-reset links can be parsed from the URL. The reset screen listens to both `getSession()` and `onAuthStateChange` because Supabase may consume the token before React mounts.
 
@@ -212,7 +212,6 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 - **No conflict resolution.** Last write wins by ID, and remote data overwrites local data during sync.
 - **Whole-store persistence.** Every action rewrites every AsyncStorage key, which is fine at current data sizes.
 - **Large screen files.** `app/roll/[id].tsx` is about 2,300 lines and a candidate for splitting into components.
-- **Dependency drift.** `expo` is on 55 while several `expo-*` / React Native packages are pinned to SDK 52-era versions (hence `--legacy-peer-deps`). Aligning them with `npx expo install --fix` is recommended.
 - **No automated tests** yet.
 
 ---

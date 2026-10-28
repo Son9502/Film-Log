@@ -4,9 +4,7 @@ const path = require("path");
 const config = getDefaultConfig(__dirname);
 
 const WEB_STUBS = {
-  "react-native-zip-archive": "src/mocks/zip-archive.web.js",
-  "react-native-maps":        "src/mocks/react-native-maps.web.js",
-  "react-native-share":       "src/mocks/react-native-share.web.js",
+  "react-native-maps": "src/mocks/react-native-maps.web.js",
 };
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {

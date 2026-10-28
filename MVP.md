@@ -111,8 +111,8 @@ v1 must work on a phone, with changes syncing to the web. The code is shared, bu
 
 **Steps:**
 
-1. **Fix the dependency versions.** `expo` is on SDK 55, but `react`, `react-native`, `expo-router` and several `expo-*` packages are pinned to SDK 52-era versions, which is why installing needs `--legacy-peer-deps`. Run `npx expo install --fix`, then fix what breaks. Expect breaking changes from the React 19 and `expo-router` upgrades, and from `expo-file-system`, whose API changed (the old one is now under `expo-file-system/legacy`).
-2. **Remove packages that block Expo Go.** Native ZIP import uses `react-native-zip-archive`, which Expo Go doesn't include. Switch it to `fflate`, which the web import already uses, so both platforms share one code path. Remove `react-native-share`: nothing imports it, and sharing is v2.
+1. ✅ **Fix the dependency versions.** Every package now matches Expo SDK 55 (React 19, React Native 0.83, `expo-router` 55), and `npm install` works without `--legacy-peer-deps`.
+2. ✅ **Remove packages that block Expo Go.** Native ZIP import now uses `fflate` with the new `expo-file-system` API instead of `react-native-zip-archive`, and the unused `react-native-share` is gone.
 3. **Run it in Expo Go.** Install Expo Go on your phone, run `npm start` and scan the QR code, with the phone and computer on the same Wi-Fi. The iOS Simulator also works through Xcode (press `i`).
 4. **Walk through the flows on the phone:** sign in, log a roll with GPS, import a ZIP of scans, then check that everything appears on the web.
 v1 runs on the phone through Expo Go only. A standalone install with its own icon (a development build, TestFlight or the App Store) comes after v1.

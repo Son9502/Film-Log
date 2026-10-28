@@ -33,8 +33,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 | Backend | Supabase (auth, PostgreSQL, storage) |
 | Maps | react-native-maps |
 | Location | expo-location + Nominatim (web geocoding) |
-| Web zip import | fflate |
-| Native zip import | react-native-zip-archive |
+| Zip import | fflate (web and native) |
 
 ---
 
@@ -44,7 +43,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 
 ```bash
 cd filmlog
-npm install --legacy-peer-deps
+npm install
 ```
 
 ### 2. Add Supabase credentials
@@ -368,7 +367,7 @@ filmlog/
 │       ├── index.ts            # uid, formatDate, rollProgress, validators
 │       └── badges.ts           # Badge stats + notification engine
 ├── supabase/                   # Incremental SQL scripts (run in numeric order)
-├── metro.config.js             # Stubs react-native-maps, zip-archive, share on web
+├── metro.config.js             # Stubs react-native-maps on web
 ├── .env.example                # Required environment variables
 ├── ARCHITECTURE.md             # System design & data flow
 └── package.json
@@ -420,7 +419,7 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 - Only the last logged frame can be deleted (film can't be un-exposed)
 - `Alert.alert` does not work on web — use inline confirm state pattern instead
 - Scan attachment is gated to rolls with status At Lab, Developed, or Archived
-- `react-native-maps` and `react-native-zip-archive` are stubbed on web via `metro.config.js`
+- `react-native-maps` is stubbed on web via `metro.config.js`
 - Supabase processes password-reset tokens before React mounts on web — the reset screen uses both `getSession()` and `onAuthStateChange` in parallel to handle the race condition
 - Tags stored in DB as JSON string (`text` column); parse on hydration with try/catch guard
 - Badges are computed client-side from store data — no DB table required

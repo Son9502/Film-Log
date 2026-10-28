@@ -5,9 +5,9 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import { unzip } from "react-native-zip-archive";
+import { unzipSync } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import { uploadScan } from "@/services/supabase";
@@ -61,16 +61,24 @@ export default function ImportScansScreen() {
       });
       if (result.canceled) return;
 
-      const zipUri = result.assets[0].uri;
-      const destDir = (FileSystem.cacheDirectory ?? "") + `import_${Date.now()}/`;
-      await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
-      await unzip(zipUri, destDir);
+      // fflate's async unzip needs Web Workers, which React Native lacks, so unzip synchronously.
+      const zipBytes = await new File(result.assets[0].uri).bytes();
+      const unzipped = unzipSync(zipBytes, {
+        filter: (entry) => IMAGE_EXTS.test(entry.name) && !entry.name.startsWith("__MACOSX"),
+      });
 
-      const all = await FileSystem.readDirectoryAsync(destDir);
-      const imageFiles = all
-        .filter((name) => IMAGE_EXTS.test(name))
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-        .map((name) => ({ name, uri: destDir + name }));
+      const destDir = new Directory(Paths.cache, `import_${Date.now()}`);
+      destDir.create({ intermediates: true });
+
+      // Flatten folders inside the ZIP: keep only each file's base name.
+      const imageFiles = Object.entries(unzipped)
+        .map(([path, data]) => ({ name: path.split("/").pop() ?? path, data }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+        .map(({ name, data }) => {
+          const file = new File(destDir, name);
+          file.write(data);
+          return { name, uri: file.uri };
+        });
 
       if (imageFiles.length === 0) {
         setError("No image files found in the ZIP.");
