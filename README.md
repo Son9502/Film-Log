@@ -393,7 +393,7 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 
 ## Roadmap
 
-> **v1 target:** see [MVP.md](MVP.md) for what remains before the web app counts as finished (security fixes, deployment, config, and Phase 9), plus the acceptance demo.
+> **v1 target:** see [MVP.md](MVP.md) for the v1 scope (development workflow, inventory, lab drop-offs, mobile), what is built so far, and the build order.
 
 | Phase | Status | Description |
 |---|---|---|
