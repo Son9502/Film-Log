@@ -6,7 +6,8 @@ import {
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import { uid } from "@/utils";
-import { Camera, FilmStock } from "@/types";
+import { Camera, DevProcess, FilmStock } from "@/types";
+import { DEV_PROCESSES, matchFilm } from "@/utils/filmMatch";
 
 // ── Add/Edit Camera Modal ─────────────────────────────────────────────────────
 
@@ -72,10 +73,16 @@ function FilmModal({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [iso, setIso] = useState(initial?.iso?.toString() ?? "");
+  const [picked, setPicked] = useState<DevProcess | null>(initial?.process ?? null);
+  const [error, setError] = useState("");
+  // Until the user picks one, suggest the process the reference data knows for this name.
+  const guess = name.trim() ? matchFilm({ name, iso: parseInt(iso) || 0 })?.process ?? null : null;
+  const process = picked ?? guess;
 
   function handleSave() {
-    if (!name.trim() || !iso.trim()) return;
-    onSave({ id: initial?.id ?? uid(), name: name.trim(), iso: parseInt(iso), isCustom: true });
+    if (!name.trim() || !iso.trim()) { setError("Enter a name and ISO."); return; }
+    if (!process) { setError("Choose how this film is developed."); return; }
+    onSave({ id: initial?.id ?? uid(), name: name.trim(), iso: parseInt(iso), isCustom: true, process });
     onClose();
   }
 
@@ -102,6 +109,16 @@ function FilmModal({
             placeholderTextColor={COLORS.textDim}
             keyboardType="number-pad"
           />
+          <Text style={m.label}>Process</Text>
+          <View style={m.chips}>
+            {DEV_PROCESSES.map((p) => (
+              <TouchableOpacity key={p} style={[m.chip, process === p && m.chipOn]} onPress={() => { setPicked(p); setError(""); }}>
+                <Text style={[m.chipText, process === p && m.chipTextOn]}>{p}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {!picked && guess ? <Text style={m.hint}>Guessed from the name; tap to change.</Text> : null}
+          {error ? <Text style={m.error}>{error}</Text> : null}
           <View style={m.actions}>
             <TouchableOpacity style={m.btnSecondary} onPress={onClose}>
               <Text style={m.btnSecondaryText}>Cancel</Text>
@@ -170,7 +187,7 @@ export default function GearScreen() {
         <View key={f.id} style={s.row}>
           <View>
             <Text style={s.rowLabel}>{f.name}</Text>
-            <Text style={s.rowSub}>ISO {f.iso}</Text>
+            <Text style={s.rowSub}>ISO {f.iso}{(f.process ?? matchFilm(f)?.process) ? ` · ${f.process ?? matchFilm(f)?.process}` : " · process not set"}</Text>
           </View>
           {f.isCustom ? (
             confirmDelete?.type === "film" && confirmDelete.id === f.id ? (
@@ -204,12 +221,14 @@ export default function GearScreen() {
 
       {/* ── Modals ── */}
       <CameraModal
+        key={cameraModal.open ? cameraModal.target?.id ?? "new" : "closed"}
         visible={cameraModal.open}
         initial={cameraModal.target}
         onSave={(c) => cameraModal.target ? updateCamera(c) : addCamera(c)}
         onClose={() => setCameraModal({ open: false })}
       />
       <FilmModal
+        key={filmModal.open ? filmModal.target?.id ?? "new" : "closed"}
         visible={filmModal.open}
         initial={filmModal.target}
         onSave={(f) => filmModal.target ? updateFilmStock(f) : addFilmStock(f)}
@@ -264,6 +283,13 @@ const m = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10, marginBottom: 16,
   },
   actions: { flexDirection: "row", gap: 12, marginTop: 4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  chip: { borderWidth: 1, borderColor: COLORS.border, paddingVertical: 8, paddingHorizontal: 12 },
+  chipOn: { borderColor: COLORS.amber, backgroundColor: COLORS.bgCard },
+  chipText: { color: COLORS.textMuted, fontFamily: "Courier New", fontSize: 12 },
+  chipTextOn: { color: COLORS.amberLight },
+  hint: { color: COLORS.textDim, fontFamily: "Courier New", fontSize: 10, marginBottom: 8 },
+  error: { color: COLORS.danger, fontFamily: "Courier New", fontSize: 11, marginBottom: 8 },
   btnPrimary: { flex: 1, backgroundColor: COLORS.amber, paddingVertical: 12, alignItems: "center" },
   btnPrimaryText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
   btnSecondary: { flex: 1, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 12, alignItems: "center" },

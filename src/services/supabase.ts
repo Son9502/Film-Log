@@ -71,6 +71,7 @@ export async function uploadScan(
   const ext = localUri.split(".").pop()?.toLowerCase() ?? "jpg";
   const path = `${userId}/${rollId}/${shotId}.${ext}`;
   const response = await fetch(localUri);
+  if (!response.ok) throw new Error(`Could not read scan file (HTTP ${response.status}).`);
   const blob = await response.blob();
   const { error } = await supabase.storage.from("scans").upload(path, blob, {
     contentType: ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`,
@@ -89,6 +90,31 @@ export async function getScanUrl(path: string): Promise<string> {
 export async function deleteScan(path: string): Promise<void> {
   const { error } = await supabase.storage.from("scans").remove([path]);
   if (error) throw error;
+}
+
+// Checks whether each stored scan responds to a HEAD request; this does not verify its contents.
+export async function verifyScans(
+  paths: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<string[]> {
+  const failed: string[] = [];
+  let done = 0;
+  let next = 0;
+  async function worker() {
+    while (next < paths.length) {
+      const path = paths[next++];
+      try {
+        const url = await getScanUrl(path);
+        const res = await fetch(url, { method: "HEAD" });
+        if (!res.ok) failed.push(path);
+      } catch {
+        failed.push(path);
+      }
+      onProgress?.(++done, paths.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(5, paths.length) }, worker));
+  return failed;
 }
 
 export async function uploadAvatar(userId: string, localUri: string): Promise<string> {

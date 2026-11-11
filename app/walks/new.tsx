@@ -7,11 +7,13 @@ import { COLORS, WALK_DIFFICULTIES, WALK_TAG_OPTIONS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { Walk, WalkStop } from "@/types";
 import { uid } from "@/utils";
+import { kmToMiles, milesToKm } from "@/utils/units";
+import { backOrReplace } from "@/utils/navigation";
 
 export default function NewWalkScreen() {
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const router = useRouter();
-  const { personalWalks, communityWalks, user, createWalk, updateWalk } = useFilmLogStore();
+  const { personalWalks, communityWalks, user, createWalk, updateWalk, distanceUnit } = useFilmLogStore();
 
   const existing = useMemo(
     () => editId
@@ -29,7 +31,9 @@ export default function NewWalkScreen() {
     existing?.estimatedMinutes != null ? String(existing.estimatedMinutes) : ""
   );
   const [distanceKm, setDistanceKm] = useState(
-    existing?.distanceKm != null ? String(existing.distanceKm) : ""
+    existing?.distanceKm != null
+      ? String(Number((distanceUnit === "mi" ? kmToMiles(existing.distanceKm) : existing.distanceKm).toFixed(1)))
+      : ""
   );
   const [isPublic, setIsPublic] = useState(existing?.isPublic ?? false);
   const [tags, setTags] = useState<string[]>(existing?.tags ?? []);
@@ -89,7 +93,9 @@ export default function NewWalkScreen() {
       city: city.trim() || undefined,
       difficulty: (difficulty as Walk["difficulty"]) || undefined,
       estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes, 10) : undefined,
-      distanceKm: distanceKm ? parseFloat(distanceKm) : undefined,
+      distanceKm: distanceKm
+        ? distanceUnit === "mi" ? milesToKm(parseFloat(distanceKm)) : parseFloat(distanceKm)
+        : undefined,
       isPublic,
       isFeatured: existing?.isFeatured ?? false,
       createdByUserId: user?.id,
@@ -105,7 +111,7 @@ export default function NewWalkScreen() {
     } else {
       createWalk(walk);
     }
-    router.back();
+    backOrReplace(router, editId ? { pathname: "/walks/[id]", params: { id: editId } } : "/(tabs)/walks");
   }
 
   return (
@@ -177,7 +183,7 @@ export default function NewWalkScreen() {
             />
           </View>
           <View style={s.half}>
-            <Text style={s.label}>Distance (km)</Text>
+            <Text style={s.label}>Distance ({distanceUnit})</Text>
             <TextInput
               style={s.input}
               value={distanceKm}

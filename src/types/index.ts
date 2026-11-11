@@ -1,10 +1,11 @@
 // ── Core domain types for Film Log ──────────────────────────────────────────
 
 export type RollStatus =
-  | "Stock"
   | "Shooting"
-  | "At Lab"
-  | "Developed"
+  | "To Develop"
+  | "In Development"
+  | "In Lab"
+  | "In Scanning"
   | "Archived";
 
 export interface Camera {
@@ -18,6 +19,7 @@ export interface FilmStock {
   name: string;        // e.g. "Kodak Portra 400"
   iso: number;
   isCustom: boolean;
+  process?: DevProcess; // how it's developed; unset means "work it out from the name"
 }
 
 export interface Location {
@@ -45,6 +47,68 @@ export interface Shot {
   tags?: string[];     // free-form labels e.g. ["portrait", "street"]
 }
 
+export interface FilmPurchase {
+  id: string;
+  filmStockId: string;
+  quantity: number;        // rolls bought
+  quantityLoaded: number;  // rolls already loaded into a camera
+  price?: number;          // total paid for the purchase
+  purchasedAt: string;     // YYYY-MM-DD
+  expiresAt?: string;      // YYYY-MM-DD
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LabDropoff {
+  id: string;
+  labName: string;
+  droppedOffAt: string;      // YYYY-MM-DD
+  expectedPickupAt?: string; // YYYY-MM-DD
+  pickedUpAt?: string;       // YYYY-MM-DD
+  cost?: number;
+  labDevelops: boolean;
+  labScans: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DevProcess = "B&W" | "C-41" | "E-6" | "ECN-2";
+
+export interface ChemicalSet {
+  id: string;
+  name: string;
+  process: DevProcess;
+  chemistryId: string;     // developer id (B&W) or kit id (colour) from the calculator data
+  chemistryName: string;
+  dilution?: string;
+  volumeMl?: number;
+  mixedAt: string;         // YYYY-MM-DD
+  capacityRolls?: number;
+  shelfLifeDays?: number;
+  rollsUsed: number;
+  minStockMlPerRoll?: number; // datasheet minimum of concentrate per roll, for dilute one-shot use
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevBatch {
+  id: string;
+  chemicalSetId: string;
+  process: DevProcess;
+  tempC: number;
+  timeSeconds: number;
+  developedAt: string;     // YYYY-MM-DD
+  rollIds: string[];
+  fixer?: string;          // e.g. "Ilford Rapid Fixer"
+  wettingAgent?: boolean;  // Photo-Flo / Ilfotol in the final rinse
+  solutionMl?: number;     // working developer volume used in the tank
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Roll {
   id: string;
   name?: string;           // Custom name e.g. "Yosemite Trip"
@@ -55,6 +119,9 @@ export interface Roll {
   status: RollStatus;
   loadedAt: string;        // ISO date string
   labAt?: string;
+  labDropoffId?: string;   // set while/after the roll is at a lab
+  backedUpAt?: string;     // ISO time every attached scan last passed the backup check
+  backedUpCount?: number;  // how many scans that check covered
   developedAt?: string;
   notes?: string;
   locationLabel?: string;  // Manual text location e.g. "Yosemite, CA"

@@ -3,15 +3,12 @@
     "name": "Film Log",
     "slug": "filmlog",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "backgroundColor": "#0d0d0d"
-    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.filmlog",
+      "bundleIdentifier": "com.sotieojo.filmlog",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Film Log uses your location to tag shoot locations on rolls and frames.",
         "NSPhotoLibraryUsageDescription": "Film Log needs access to your photos to import scans.",
@@ -20,9 +17,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0d0d0d"
+        "backgroundColor": "#0d0d0d",
+        "foregroundImage": "./assets/icon.png"
       },
-      "package": "com.yourname.filmlog",
+      "package": "com.sotieojo.filmlog",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "READ_EXTERNAL_STORAGE",
@@ -32,7 +30,16 @@
     "plugins": [
       "expo-router",
       "expo-location",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0d0d0d"
+        }
+      ]
     ],
     "scheme": "filmlog"
   }

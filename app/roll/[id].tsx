@@ -1,38 +1,58 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  Modal, ScrollView, StyleSheet, Image, ActivityIndicator, Platform, Switch,
+  Modal, ScrollView, StyleSheet, Image, ActivityIndicator, Platform, Switch, useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
-import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS } from "@/constants";
-import { uid, formatDate, rollProgress, statusColors, validateFrameCountChange } from "@/utils";
+import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, NEXT_STATUSES, statusActionLabel } from "@/constants";
+import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName } from "@/utils";
 import { Shot, RollStatus } from "@/types";
-import { uploadScan, getScanUrl, deleteScan } from "@/services/supabase";
+import LabDropoffModal, { DropoffInput } from "@/components/LabDropoffModal";
+import DevelopedModal, { DevelopedDetails } from "@/components/DevelopedModal";
+import { batchForRoll } from "@/utils/chemistry";
+import { uploadScan, getScanUrl, deleteScan, verifyScans } from "@/services/supabase";
+import { displayStoredTemperature, storedTemperature } from "@/utils/units";
+import { backOrReplace } from "@/utils/navigation";
+import ShotIsoField from "@/components/ShotIsoField";
+import { stopsFromBox } from "@/utils/devCalc";
+import { filmStripScanLayout, fitScanPreview } from "@/utils/scanLayout";
+import { readScanImageSize } from "@/utils/scanImageSize";
 
 // ── Scan thumbnail (fetches signed URL on mount) ───────────────────────────────
 
-function ScanThumb({ path, style, resizeMode = "cover" }: { path: string; style?: any; resizeMode?: "cover" | "contain" }) {
+function ScanThumb({ path, style, resizeMode = "contain", onSize }: {
+  path: string;
+  style?: import("react-native").StyleProp<import("react-native").ImageStyle>;
+  resizeMode?: "cover" | "contain";
+  onSize?: (size: { width: number; height: number }) => void;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const retries = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     retries.current = 0;
+    setUrl(null);
     getScanUrl(path)
       .then((u) => { if (!cancelled) setUrl(u); })
-      .catch(() => {});
+      .catch((error) => { if (!cancelled) console.error("Could not load scan URL:", error); });
     return () => { cancelled = true; };
   }, [path]);
+
+  useEffect(() => {
+    if (!url || !onSize) return;
+    return readScanImageSize(url, onSize);
+  }, [url, onSize]);
 
   function handleError() {
     if (retries.current >= 2) return;
     retries.current++;
     setUrl(null);
-    getScanUrl(path).then((u) => setUrl(u)).catch(() => {});
+    getScanUrl(path).then((u) => setUrl(u)).catch((error) => console.error("Could not refresh scan URL:", error));
   }
 
   if (!url) return <View style={[style, { backgroundColor: COLORS.bgCard }]} />;
@@ -392,6 +412,7 @@ function EditShotModal({
   onClose: () => void;
 }) {
   const { updateShot, deleteShot, user } = useFilmLogStore();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const [shutter, setShutter] = useState(shot?.shutter ?? "");
   const [aperture, setAperture] = useState(shot?.aperture ?? "");
@@ -404,7 +425,10 @@ function EditShotModal({
   const [pendingLocalUri, setPendingLocalUri] = useState<string | null>(null);
   const [scanRemoved, setScanRemoved] = useState(false);
   const [scanUploading, setScanUploading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [scanRotation, setScanRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [scanSize, setScanSize] = useState({ width: 3, height: 2 });
+  const [zoomSize, setZoomSize] = useState({ width: 0, height: 0 });
   const [timestamp, setTimestamp] = useState(shot?.timestamp ?? "");
   const [flash, setFlash] = useState<boolean | undefined>(shot?.flash);
   const [filter, setFilter] = useState(shot?.filter ?? "");
@@ -440,7 +464,9 @@ function EditShotModal({
     setLocationLabel(shot.locationLabel ?? "");
     setPendingLocalUri(null);
     setScanRemoved(false);
+    setScanError(null);
     setScanRotation(0);
+    setScanSize({ width: 3, height: 2 });
     setTimestamp(shot.timestamp ?? "");
     setFlash(shot.flash);
     setFilter(shot.filter ?? "");
@@ -458,6 +484,11 @@ function EditShotModal({
     setConfirmingDelete(false);
   }, [shot?.id]);
 
+  useEffect(() => {
+    if (!pendingLocalUri) return;
+    return readScanImageSize(pendingLocalUri, setScanSize);
+  }, [pendingLocalUri, shot?.id]);
+
   if (!shot) return null;
 
   const hasScan = pendingLocalUri !== null || (!scanRemoved && !!shot.scanUri);
@@ -468,6 +499,7 @@ function EditShotModal({
       quality: 0.85,
     });
     if (!result.canceled && result.assets[0]) {
+      setScanSize({ width: 3, height: 2 });
       setPendingLocalUri(result.assets[0].uri);
       setScanRemoved(false);
     }
@@ -495,11 +527,16 @@ function EditShotModal({
 
   async function handleSave() {
     let scanUri: string | undefined = shot!.scanUri;
+    setScanError(null);
 
-    if (scanRemoved && shot!.scanUri) {
-      try { await deleteScan(shot!.scanUri); } catch {}
-      scanUri = undefined;
+    if (pendingLocalUri && !user) {
+      setScanError("Sign in to upload this scan.");
+      return;
     }
+
+    // The cloud file is deleted by sync once the cloud has accepted this change,
+    // so another device that still shows the scan can't lose it to a stale edit.
+    if (scanRemoved && shot!.scanUri) scanUri = undefined;
 
     if (pendingLocalUri && user) {
       setScanUploading(true);
@@ -507,6 +544,8 @@ function EditShotModal({
         scanUri = await uploadScan(user.id, rollId, shot!.id, pendingLocalUri);
       } catch (e) {
         console.error("Scan upload failed:", e);
+        setScanError("Scan upload failed. Check your connection and try again.");
+        return;
       } finally {
         setScanUploading(false);
       }
@@ -532,10 +571,13 @@ function EditShotModal({
     onClose();
   }
 
-  const scanAllowed = rollStatus === "Developed" || rollStatus === "At Lab" || rollStatus === "Archived";
+  const scanAllowed = rollStatus !== "Shooting" && rollStatus !== "To Develop";
+  const zoomFit = zoomSize.width > 0 && zoomSize.height > 0
+    ? fitScanPreview(scanSize.width, scanSize.height, scanRotation, zoomSize.width, zoomSize.height)
+    : null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { if (!scanUploading) onClose(); }}>
       <View style={m.overlay}>
         <ScrollView style={m.sheet} keyboardShouldPersistTaps="handled">
           <Text style={m.title}>Frame {shot.frame}</Text>
@@ -544,15 +586,13 @@ function EditShotModal({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={m.cardScroll}>
             <View style={m.cardRow}>
               {scanAllowed && (() => {
-                const rotated = scanRotation === 90 || scanRotation === 270;
-                const cW = rotated ? 300 : 500;
-                const cH = rotated ? 500 : 300;
-                const containerStyle = { width: cW, height: cH, overflow: "hidden" as const };
+                const fit = fitScanPreview(scanSize.width, scanSize.height, scanRotation, Math.max(100, Math.min(500, windowWidth - 72)), Math.max(120, Math.min(400, windowHeight * 0.5)));
+                const containerStyle = { width: fit.frameWidth, height: fit.frameHeight, overflow: "hidden" as const, backgroundColor: COLORS.bg };
                 const imgStyle = {
                   position: "absolute" as const,
-                  width: 500, height: 300,
-                  top: rotated ? 100 : 0,
-                  left: rotated ? -100 : 0,
+                  width: fit.imageWidth, height: fit.imageHeight,
+                  top: fit.top,
+                  left: fit.left,
                   transform: [{ rotate: `${scanRotation}deg` }],
                 };
                 return (
@@ -566,9 +606,9 @@ function EditShotModal({
                         >
                           <View style={containerStyle}>
                             {pendingLocalUri ? (
-                              <Image source={{ uri: pendingLocalUri }} style={imgStyle} resizeMode="cover" />
+                              <Image source={{ uri: pendingLocalUri }} style={imgStyle} resizeMode="contain" />
                             ) : (
-                              <ScanThumb path={shot.scanUri!} style={imgStyle} />
+                              <ScanThumb key={`${shot.id}:${shot.scanUri}`} path={shot.scanUri!} style={imgStyle} onSize={setScanSize} />
                             )}
                           </View>
                           <View style={m.scanZoomHint}>
@@ -599,6 +639,7 @@ function EditShotModal({
                         <Text style={m.orientBtnText}>↻  Right</Text>
                       </TouchableOpacity>
                     </View>
+                    {hasScan && <Text style={m.rotationHint}>Rotation is preview only; it is not saved.</Text>}
                   </View>
                 );
               })()}
@@ -776,6 +817,8 @@ function EditShotModal({
             </View>
           </ScrollView>
 
+          {scanError && <Text style={{ color: "#ff9588", fontSize: 14, marginBottom: 8 }}>{scanError}</Text>}
+          {scanUploading && <Text style={{ color: COLORS.textSecondary, fontSize: 14, marginBottom: 8 }}>Uploading scan…</Text>}
           <View style={m.actions}>
             <TouchableOpacity style={m.btnSecondary} onPress={onClose} disabled={scanUploading}>
               <Text style={m.btnSecondaryText}>Cancel</Text>
@@ -888,20 +931,27 @@ function EditShotModal({
             >
               <Text style={m.scanLbCloseText}>✕</Text>
             </TouchableOpacity>
-            <View style={m.scanLbImageWrap} pointerEvents="none">
-              {pendingLocalUri ? (
-                <Image
-                  source={{ uri: pendingLocalUri }}
-                  style={[m.scanLbImage, { transform: [{ rotate: `${scanRotation}deg` }] }]}
-                  resizeMode="contain"
-                />
-              ) : shot.scanUri ? (
-                <ScanThumb
-                  path={shot.scanUri}
-                  style={[m.scanLbImage, { transform: [{ rotate: `${scanRotation}deg` }] }]}
-                  resizeMode="contain"
-                />
-              ) : null}
+            <View style={m.scanLbImageWrap} pointerEvents="none"
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setZoomSize({ width, height });
+              }}>
+              {zoomFit && (
+                <View style={{ width: zoomFit.frameWidth, height: zoomFit.frameHeight }}>
+                  {pendingLocalUri ? (
+                    <Image
+                      source={{ uri: pendingLocalUri }}
+                      style={{ position: "absolute", width: zoomFit.imageWidth, height: zoomFit.imageHeight, left: zoomFit.left, top: zoomFit.top, transform: [{ rotate: `${scanRotation}deg` }] }}
+                      resizeMode="contain"
+                    />
+                  ) : shot.scanUri ? (
+                    <ScanThumb
+                      path={shot.scanUri}
+                      style={{ position: "absolute", width: zoomFit.imageWidth, height: zoomFit.imageHeight, left: zoomFit.left, top: zoomFit.top, transform: [{ rotate: `${scanRotation}deg` }] }}
+                    />
+                  ) : null}
+                </View>
+              )}
             </View>
             {Platform.OS === "web" && (
               <Text style={m.scanLbHint}>tap or esc to close</Text>
@@ -924,7 +974,7 @@ function EditRollModal({
   rollId: string;
   onClose: () => void;
 }) {
-  const { rolls, cameras, filmStocks, updateRoll } = useFilmLogStore();
+  const { rolls, cameras, filmStocks, updateRoll, temperatureUnit } = useFilmLogStore();
   const roll = rolls.find((r) => r.id === rollId);
 
   const [name, setName] = useState(roll?.name ?? "");
@@ -932,6 +982,11 @@ function EditRollModal({
   const [locationLabel, setLocationLabel] = useState(roll?.locationLabel ?? "");
   const [cameraId, setCameraId] = useState(roll?.cameraId ?? "");
   const [filmStockId, setFilmStockId] = useState(roll?.filmStockId ?? "");
+  // Empty means box speed; only show a value when the roll was rated differently.
+  const [shotIso, setShotIso] = useState(() => {
+    const box = filmStocks.find((f) => f.id === roll?.filmStockId)?.iso;
+    return roll?.iso && roll.iso !== String(box) ? roll.iso : "";
+  });
   const isPreset = FRAME_COUNT_OPTIONS.includes(roll?.frameCount ?? 36);
   const [frameCount, setFrameCount] = useState(isPreset ? (roll?.frameCount ?? 36) : 36);
   const [useCustomFrames, setUseCustomFrames] = useState(!isPreset);
@@ -944,7 +999,7 @@ function EditRollModal({
   const [developer, setDeveloper] = useState(roll?.developer ?? "");
   const [dilution, setDilution] = useState(roll?.dilution ?? "");
   const [devTime, setDevTime] = useState(roll?.devTime ?? "");
-  const [devTemp, setDevTemp] = useState(roll?.devTemp ?? "");
+  const [devTemp, setDevTemp] = useState(displayStoredTemperature(roll?.devTemp, temperatureUnit) ?? "");
   const [pushPull, setPushPull] = useState(roll?.pushPull ?? "");
   const [fixer, setFixer] = useState(roll?.fixer ?? "");
   const [photoFlo, setPhotoFlo] = useState<boolean | undefined>(roll?.photoFlo);
@@ -1003,12 +1058,12 @@ function EditRollModal({
       location: resolvedLocation ?? (locationLabel.trim() ? roll?.location : undefined),
       cameraId,
       filmStockId,
-      iso: selectedFilm?.iso.toString() ?? base.iso,
+      iso: parseInt(shotIso, 10) > 0 ? shotIso : selectedFilm?.iso.toString() ?? base.iso,
       frameCount: resolvedFrameCount,
       developer: developer.trim() || undefined,
       dilution: dilution.trim() || undefined,
       devTime: devTime.trim() || undefined,
-      devTemp: devTemp.trim() || undefined,
+      devTemp: devTemp.trim() ? storedTemperature(devTemp, temperatureUnit) : undefined,
       pushPull: pushPull.trim() || undefined,
       fixer: fixer.trim() || undefined,
       photoFlo,
@@ -1018,6 +1073,8 @@ function EditRollModal({
     onClose();
   }
 
+  // Development details only make sense once the roll is being (or has been) developed.
+  const showDevFields = roll.status !== "Shooting" && roll.status !== "To Develop";
   const selectedCamera = cameras.find((c) => c.id === cameraId);
   const selectedFilm = filmStocks.find((f) => f.id === filmStockId);
 
@@ -1030,6 +1087,9 @@ function EditRollModal({
           <Text style={m.label}>Roll Name</Text>
           <TextInput style={m.input} value={name} onChangeText={setName}
             placeholder="e.g. Yosemite Trip" placeholderTextColor={COLORS.textDim} />
+          {hasDuplicateRollName(name, rolls, rollId) && (
+            <Text style={m.errorText}>Another roll has this name. Both rolls remain separate.</Text>
+          )}
 
           <Text style={m.label}>Camera</Text>
           <TouchableOpacity style={m.picker} onPress={() => setCameraPickerOpen(true)}>
@@ -1042,6 +1102,7 @@ function EditRollModal({
             <Text style={m.pickerText}>{selectedFilm?.name ?? "Select"}</Text>
             <Text style={m.pickerArrow}>›</Text>
           </TouchableOpacity>
+          <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={m.label} />
 
           <Text style={m.label}>Frame Count</Text>
           <View style={m.segmented}>
@@ -1121,6 +1182,8 @@ function EditRollModal({
             />
           </View>
 
+          {showDevFields && (<>
+          <Text style={m.sectionLabel}>Development</Text>
           <Text style={m.label}>Developer</Text>
           <TextInput style={m.input} value={developer} onChangeText={setDeveloper}
             placeholder="e.g. Kodak D-76" placeholderTextColor={COLORS.textDim} />
@@ -1132,9 +1195,9 @@ function EditRollModal({
                 placeholder="e.g. 1+1" placeholderTextColor={COLORS.textDim} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={m.label}>Dev Temp</Text>
+              <Text style={m.label}>Dev Temp (°{temperatureUnit})</Text>
               <TextInput style={m.input} value={devTemp} onChangeText={setDevTemp}
-                placeholder="e.g. 20°C" placeholderTextColor={COLORS.textDim} />
+                placeholder={`e.g. ${temperatureUnit === "F" ? "68°F" : "20°C"}`} placeholderTextColor={COLORS.textDim} />
             </View>
           </View>
 
@@ -1166,6 +1229,7 @@ function EditRollModal({
               <Text style={[m.segmentText, photoFlo === true && m.segmentTextActive]}>Used</Text>
             </TouchableOpacity>
           </View>
+          </>)}
 
           <View style={m.actions}>
             <TouchableOpacity style={m.btnSecondary} onPress={onClose}>
@@ -1201,7 +1265,7 @@ function EditRollModal({
                 <Text style={m.title}>Film Stock</Text>
                 {filmStocks.map((f) => (
                   <TouchableOpacity key={f.id} style={[m.option, filmStockId === f.id && m.optionActive]}
-                    onPress={() => { setFilmStockId(f.id); setFilmPickerOpen(false); }}>
+                    onPress={() => { if (f.id !== filmStockId) setShotIso(""); setFilmStockId(f.id); setFilmPickerOpen(false); }}>
                     <Text style={[m.optionText, filmStockId === f.id && m.optionTextActive]}>{f.name}</Text>
                     <Text style={m.optionSub}>ISO {f.iso}</Text>
                   </TouchableOpacity>
@@ -1220,9 +1284,34 @@ function EditRollModal({
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-const STATUS_ORDER: RollStatus[] = ["Stock", "Shooting", "At Lab", "Developed", "Archived"];
 
 // ── Film strip helpers ────────────────────────────────────────────────────────
+
+function FilmStripScan({ path }: { path: string }) {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const layout = size && size.width > 0 && size.height > 0
+    ? filmStripScanLayout(size.width, size.height, PHOTO_W, PHOTO_H)
+    : null;
+
+  return (
+    <View style={fs.framePhoto}>
+      <View style={layout ? { width: layout.frameWidth, height: layout.frameHeight } : fs.framePhoto}>
+        <ScanThumb
+          path={path}
+          onSize={setSize}
+          style={layout ? {
+            position: "absolute",
+            width: layout.imageWidth,
+            height: layout.imageHeight,
+            left: layout.left,
+            top: layout.top,
+            transform: [{ rotate: `${layout.rotation}deg` }],
+          } : fs.framePhoto}
+        />
+      </View>
+    </View>
+  );
+}
 
 // ── Film Strip Modal ──────────────────────────────────────────────────────────
 
@@ -1346,7 +1435,7 @@ function FilmStripModal({
                       }}
                     >
                       {f.scanUri ? (
-                        <ScanThumb path={f.scanUri} style={fs.framePhoto} />
+                        <FilmStripScan key={f.scanUri} path={f.scanUri} />
                       ) : (
                         <View style={fs.frameEmpty} />
                       )}
@@ -1491,8 +1580,13 @@ function RollMapModal({
 export default function RollDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { rolls, cameras, filmStocks, updateRoll, deleteRoll, addShot } = useFilmLogStore();
+  const { rolls, cameras, filmStocks, dropoffs, batches, chemSets, updateRoll, deleteRoll, addShot, addDropoff, updateDropoff, temperatureUnit } = useFilmLogStore();
 
+  const [dropoffOpen, setDropoffOpen] = useState(false);
+  const [developedOpen, setDevelopedOpen] = useState(false);
+  const [backupCheck, setBackupCheck] = useState<
+    { running: boolean; done: number; total: number; failed: number | null; error?: string }
+  >({ running: false, done: 0, total: 0, failed: null });
   const [logOpen, setLogOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [filmStripOpen, setFilmStripOpen] = useState(false);
@@ -1504,22 +1598,9 @@ export default function RollDetailScreen() {
 
   const roll = rolls.find((r) => r.id === id);
 
-  if (!roll) {
-    return (
-      <View style={s.center}>
-        <Text style={s.notFound}>Roll not found.</Text>
-      </View>
-    );
-  }
-
-  const camera = cameras.find((c) => c.id === roll.cameraId);
-  const film = filmStocks.find((f) => f.id === roll.filmStockId);
-  const { bg, fg } = statusColors(roll.status);
-  const progress = rollProgress(roll.shots.length, roll.frameCount);
-
-  const scannedShots = roll.shots.filter((s) => s.scanUri);
-  const lbShot = lightboxShotId ? roll.shots.find((s) => s.id === lightboxShotId) ?? null : null;
-  const lbIdx = lightboxShotId ? scannedShots.findIndex((s) => s.id === lightboxShotId) : -1;
+  // Supabase returns nested shots in no fixed order, so always show frames by number.
+  const shotsForNav = [...(roll?.shots ?? [])].sort((a, b) => a.frame - b.frame);
+  const scannedShots = shotsForNav.filter((s) => s.scanUri);
 
   useEffect(() => {
     if (Platform.OS !== "web" || !lightboxShotId) return;
@@ -1543,16 +1624,40 @@ export default function RollDetailScreen() {
     const handler = (e: KeyboardEvent) => {
       const tag = ((d as Document).activeElement as HTMLElement)?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      const sorted = [...roll.shots].sort((a, b) => a.frame - b.frame);
+      const sorted = [...shotsForNav].sort((a, b) => a.frame - b.frame);
       const idx = sorted.findIndex((s) => s.id === editingShotId);
       if (e.key === "ArrowRight" && idx < sorted.length - 1) setEditingShotId(sorted[idx + 1].id);
       else if (e.key === "ArrowLeft" && idx > 0) setEditingShotId(sorted[idx - 1].id);
     };
     d.addEventListener("keydown", handler);
     return () => d.removeEventListener("keydown", handler);
-  }, [editingShotId, lightboxShotId, roll.shots]);
+  }, [editingShotId, lightboxShotId, shotsForNav]);
 
-  const nextStatus = STATUS_ORDER[STATUS_ORDER.indexOf(roll.status) + 1] as RollStatus | undefined;
+  if (!roll) {
+    return (
+      <View style={s.center}>
+        <Text style={s.notFound}>Roll not found.</Text>
+      </View>
+    );
+  }
+
+  const camera = cameras.find((c) => c.id === roll.cameraId);
+  const film = filmStocks.find((f) => f.id === roll.filmStockId);
+  const { bg, fg } = statusColors(roll.status);
+  const progress = rollProgress(roll.shots.length, roll.frameCount);
+
+  const lbShot = lightboxShotId ? roll.shots.find((s) => s.id === lightboxShotId) ?? null : null;
+  const lbIdx = lightboxShotId ? scannedShots.findIndex((s) => s.id === lightboxShotId) : -1;
+
+  const dropoff = roll.labDropoffId ? dropoffs.find((d) => d.id === roll.labDropoffId) : undefined;
+  const rollBatch = batchForRoll(batches, roll.id);
+  const rollBatchSet = rollBatch ? chemSets.find((c) => c.id === rollBatch.chemicalSetId) : undefined;
+  let nextStatuses = NEXT_STATUSES[roll.status] ?? [];
+  // Once we know what the lab is doing, only offer the step that follows.
+  if (roll.status === "In Lab" && dropoff) {
+    nextStatuses = dropoff.labScans ? ["Archived"] : ["In Scanning"];
+  }
+  const previousLabs = Array.from(new Set(dropoffs.map((d) => d.labName)));
 
   async function handleQuickLog() {
     setQuickLogging(true);
@@ -1568,15 +1673,74 @@ export default function RollDetailScreen() {
     setQuickLogging(false);
   }
 
-  function advanceStatus() {
-    if (!nextStatus) return;
-    updateRoll({ ...roll!, status: nextStatus, updatedAt: new Date().toISOString() });
+  async function runBackupCheck() {
+    const paths = scannedShots.map((s) => s.scanUri!);
+    if (paths.length === 0) return;
+    setBackupCheck({ running: true, done: 0, total: paths.length, failed: null });
+    try {
+      const failed = await verifyScans(paths, (done, total) =>
+        setBackupCheck((c) => ({ ...c, done, total }))
+      );
+      setBackupCheck({ running: false, done: paths.length, total: paths.length, failed: failed.length });
+      if (failed.length === 0) {
+        const now = new Date().toISOString();
+        updateRoll({ ...roll!, backedUpAt: now, backedUpCount: paths.length, updatedAt: now });
+      }
+    } catch (e) {
+      setBackupCheck({ running: false, done: 0, total: paths.length, failed: null, error: "Couldn't reach cloud storage. Check your connection and try again." });
+    }
+  }
+
+  const backedUp =
+    !!roll.backedUpAt && roll.backedUpCount === scannedShots.length && scannedShots.length > 0;
+
+  function advanceStatus(next: RollStatus) {
+    if (next === "In Lab") {
+      setDropoffOpen(true);
+      return;
+    }
+    // Developed at home outside a batch: ask how, so the roll keeps its development record.
+    if (roll!.status === "In Development" && next === "In Scanning" && !rollBatch) {
+      setDevelopedOpen(true);
+      return;
+    }
+    if (roll!.status === "In Lab" && dropoff && !dropoff.pickedUpAt) {
+      // A shared drop-off is only "picked up" once its last roll leaves the lab.
+      const othersAtLab = rolls.some(
+        (r) => r.id !== roll!.id && r.labDropoffId === dropoff.id && r.status === "In Lab"
+      );
+      if (!othersAtLab) updateDropoff({ ...dropoff, pickedUpAt: todayISO(), updatedAt: new Date().toISOString() });
+    }
+    updateRoll({ ...roll!, status: next, updatedAt: new Date().toISOString() });
+  }
+
+  function handleDeveloped(details: DevelopedDetails) {
+    updateRoll({ ...roll!, ...details, status: "In Scanning", updatedAt: new Date().toISOString() });
+    setDevelopedOpen(false);
+  }
+
+  function handleReuseDropoff(dropoffId: string) {
+    const existing = dropoffs.find((d) => d.id === dropoffId);
+    if (!existing) return;
+    updateRoll({
+      ...roll!, status: "In Lab", labDropoffId: existing.id,
+      labAt: existing.droppedOffAt, updatedAt: new Date().toISOString(),
+    });
+    setDropoffOpen(false);
+  }
+
+  function handleDropoff(input: DropoffInput) {
+    const now = new Date().toISOString();
+    const dropoffId = uid();
+    addDropoff({ id: dropoffId, ...input, createdAt: now, updatedAt: now });
+    updateRoll({ ...roll!, status: "In Lab", labDropoffId: dropoffId, labAt: input.droppedOffAt, updatedAt: now });
+    setDropoffOpen(false);
   }
 
   function confirmDelete() {
     const rollId = roll!.id;
     deleteRoll(rollId);
-    router.back();
+    backOrReplace(router, "/(tabs)");
   }
 
   const renderShot = ({ item }: { item: Shot }) => (
@@ -1645,7 +1809,7 @@ export default function RollDetailScreen() {
   return (
     <View style={s.container}>
       <FlatList
-        data={roll.shots}
+        data={shotsForNav}
         keyExtractor={(sh) => sh.id}
         renderItem={renderShot}
         contentContainerStyle={s.list}
@@ -1655,9 +1819,14 @@ export default function RollDetailScreen() {
             <View style={s.card}>
               <View style={s.cardTop}>
                 <View style={s.cardLeft}>
-                  {roll.name && <Text style={s.rollName}>{roll.name}</Text>}
-                  <Text style={s.filmName}>{film?.name ?? roll.filmStockId}</Text>
-                  <Text style={s.meta}>{camera?.name ?? roll.cameraId} · ISO {roll.iso}</Text>
+                  <Text style={s.rollName}>{roll.name?.trim() || film?.name || roll.filmStockId}</Text>
+                  {!!roll.name?.trim() && <Text style={s.filmName}>{film?.name ?? roll.filmStockId}</Text>}
+                  <Text style={s.meta}>
+                    {camera?.name ?? roll.cameraId} · ISO {roll.iso}
+                    {film && parseInt(roll.iso, 10) > 0 && parseInt(roll.iso, 10) !== film.iso
+                      ? ` · rated from ${film.iso} (${stopsFromBox(film.iso, parseInt(roll.iso, 10)) > 0 ? "push" : "pull"})`
+                      : ""}
+                  </Text>
                   <Text style={s.meta}>Loaded {formatDate(roll.loadedAt)}</Text>
                   {roll.locationLabel && <Text style={s.rollLocation}>📍 {roll.locationLabel}</Text>}
                   {(roll.developer || roll.devTime || roll.pushPull) && (
@@ -1666,7 +1835,7 @@ export default function RollDetailScreen() {
                         roll.pushPull && `Push/Pull ${roll.pushPull}`,
                         roll.developer,
                         roll.dilution,
-                        roll.devTime && `${roll.devTime}${roll.devTemp ? " @ " + roll.devTemp : ""}`,
+                        roll.devTime && `${roll.devTime}${roll.devTemp ? " @ " + (displayStoredTemperature(roll.devTemp, temperatureUnit) ?? roll.devTemp) : ""}`,
                         roll.fixer,
                         roll.photoFlo === true ? "Photo-Flo" : null,
                       ].filter(Boolean).join(" · ")}
@@ -1689,17 +1858,45 @@ export default function RollDetailScreen() {
                 <View style={[s.badge, { backgroundColor: bg, borderColor: fg }]}>
                   <Text style={[s.badgeText, { color: fg }]}>{roll.status}</Text>
                 </View>
-                {nextStatus && (
-                  <TouchableOpacity style={s.advanceBtn} onPress={advanceStatus}>
-                    <Text style={s.advanceText}>→ {nextStatus}</Text>
-                  </TouchableOpacity>
-                )}
-                <View style={[s.badge, { backgroundColor: COLORS.bgCard, borderColor: COLORS.border, marginLeft: "auto" }]}>
+                <View style={[s.badge, { backgroundColor: COLORS.bgCard, borderColor: COLORS.border }]}>
                   <Text style={[s.badgeText, { color: roll.isPublic ? COLORS.amber : COLORS.textDim }]}>
                     {roll.isPublic ? "🔓 Public" : "🔒 Private"}
                   </Text>
                 </View>
               </View>
+              {nextStatuses.length > 0 && (
+                <View style={s.statusActions}>
+                  {nextStatuses.map((next) => (
+                    <TouchableOpacity key={next} style={s.advanceBtn} onPress={() => advanceStatus(next)}>
+                      <Text style={s.advanceText}>→ {statusActionLabel(roll.status, next)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {rollBatch && (
+                <TouchableOpacity style={s.dropoffCard} onPress={() => router.push("/develop")}>
+                  <Text style={s.dropoffTitle}>Developed in a batch ›</Text>
+                  <Text style={s.dropoffLine}>
+                    {formatDate(rollBatch.developedAt)} · {rollBatchSet?.name ?? "Deleted chemical set"} · {rollBatch.rollIds.length} roll{rollBatch.rollIds.length === 1 ? "" : "s"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {dropoff && (
+                <View style={s.dropoffCard}>
+                  <Text style={s.dropoffTitle}>{dropoff.labName}</Text>
+                  <Text style={s.dropoffLine}>
+                    Dropped off {formatDate(dropoff.droppedOffAt)}
+                    {dropoff.expectedPickupAt && !dropoff.pickedUpAt ? ` · pickup ${formatDate(dropoff.expectedPickupAt)}` : ""}
+                    {dropoff.pickedUpAt ? ` · picked up ${formatDate(dropoff.pickedUpAt)}` : ""}
+                  </Text>
+                  <Text style={s.dropoffLine}>
+                    {[dropoff.labDevelops && "develops", dropoff.labScans && "scans"].filter(Boolean).join(" + ")}
+                    {dropoff.cost != null ? ` · $${dropoff.cost.toFixed(2)}` : ""}
+                  </Text>
+                </View>
+              )}
 
               {/* Edit / Delete */}
               <View style={s.actionRow}>
@@ -1726,14 +1923,44 @@ export default function RollDetailScreen() {
               </View>
             </View>
 
-            {/* Import Scans — only for developed rolls that have shots */}
-            {roll.status === "Developed" && roll.shots.length > 0 && (
+            {/* Import Scans for developed and archived rolls */}
+            {(roll.status === "In Scanning" || roll.status === "Archived") && (
               <TouchableOpacity
                 style={s.importBtn}
                 onPress={() => router.push(`/roll/import?id=${roll.id}`)}
               >
                 <Text style={s.importBtnText}>Import Scans</Text>
               </TouchableOpacity>
+            )}
+
+            {/* Scan backup check */}
+            {scannedShots.length > 0 && (
+              <View style={s.backupCard}>
+                {backedUp && backupCheck.failed === null && !backupCheck.running ? (
+                  <>
+                    <Text style={s.backupOk}>✓ Backed up</Text>
+                    <Text style={s.backupLine}>
+                      Cloud storage responded for {scannedShots.length} attached scans
+                      {roll.backedUpAt ? ` (checked ${formatDate(roll.backedUpAt)})` : ""}. Before deleting originals, export the scans and open the downloaded files to verify them.
+                    </Text>
+                  </>
+                ) : backupCheck.failed !== null && backupCheck.failed > 0 ? (
+                  <Text style={s.backupBad}>
+                    {backupCheck.failed} of {backupCheck.total} scans couldn't be fetched back. Keep your local copies, re-import those frames, and check again.
+                  </Text>
+                ) : backupCheck.error ? (
+                  <Text style={s.backupBad}>{backupCheck.error}</Text>
+                ) : (
+                  <Text style={s.backupLine}>
+                    {backupCheck.running
+                      ? `Checking ${backupCheck.done} / ${backupCheck.total}…`
+                      : `${scannedShots.length} of ${roll.shots.length} frames have scans. Check they're backed up before deleting local copies.`}
+                  </Text>
+                )}
+                <TouchableOpacity onPress={runBackupCheck} disabled={backupCheck.running}>
+                  <Text style={s.backupBtn}>{backupCheck.running ? "Checking…" : backedUp ? "Check again" : "Check backup"}</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {/* Film Strip / Map — available whenever there are logged shots */}
@@ -1758,7 +1985,15 @@ export default function RollDetailScreen() {
               </Text>
             )}
             {roll.status === "Shooting" && roll.shots.length >= roll.frameCount && (
-              <Text style={s.rollFull}>Roll full — {roll.frameCount} frames logged.</Text>
+              <>
+                <Text style={s.rollFull}>Roll full — {roll.frameCount} frames logged.</Text>
+                <TouchableOpacity
+                  style={s.advanceBtn}
+                  onPress={() => updateRoll({ ...roll, frameCount: roll.frameCount + 1, updatedAt: new Date().toISOString() })}
+                >
+                  <Text style={s.advanceText}>+ 1 more frame</Text>
+                </TouchableOpacity>
+              </>
             )}
           </>
         }
@@ -1783,13 +2018,40 @@ export default function RollDetailScreen() {
         </View>
       )}
 
-      <FilmStripModal
-        visible={filmStripOpen}
+      <DevelopedModal
+        visible={developedOpen}
         roll={roll}
-        filmStockName={filmStocks.find((f) => f.id === roll.filmStockId)?.name ?? roll.filmStockId}
-        onClose={() => setFilmStripOpen(false)}
-        onFramePress={(shotId) => { setFilmStripOpen(false); setEditingShotId(shotId); }}
+        boxIso={film?.iso}
+        temperatureUnit={temperatureUnit}
+        onClose={() => setDevelopedOpen(false)}
+        onSave={handleDeveloped}
+        onAddToBatch={() => {
+          setDevelopedOpen(false);
+          router.push({ pathname: "/batch/new", params: { rollId: roll.id } });
+        }}
       />
+
+      <LabDropoffModal
+        visible={dropoffOpen}
+        onClose={() => setDropoffOpen(false)}
+        onSubmit={handleDropoff}
+        onReuse={handleReuseDropoff}
+        previousLabs={previousLabs}
+        openDropoffs={dropoffs.filter(
+          (d) => !d.pickedUpAt && (roll.status !== "In Development" || d.labScans)
+        )}
+        lockScans={roll.status === "In Development"}
+      />
+
+      {filmStripOpen && (
+        <FilmStripModal
+          visible={filmStripOpen}
+          roll={roll}
+          filmStockName={filmStocks.find((f) => f.id === roll.filmStockId)?.name ?? roll.filmStockId}
+          onClose={() => setFilmStripOpen(false)}
+          onFramePress={(shotId) => { setFilmStripOpen(false); setEditingShotId(shotId); }}
+        />
+      )}
       <RollMapModal
         visible={mapOpen}
         shots={roll.shots}
@@ -1902,41 +2164,50 @@ const s = StyleSheet.create({
     borderColor: COLORS.border, padding: 16, marginBottom: 12,
   },
   cardTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  cardLeft: { flex: 1 },
+  cardLeft: { flex: 1, paddingRight: 8 },
   cardRight: { alignItems: "flex-end" },
-  rollName: { fontSize: 11, color: COLORS.amber, letterSpacing: 1, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 4 },
-  filmName: { fontSize: 15, fontWeight: "bold", color: COLORS.textPrimary, fontFamily: "Courier New" },
-  meta: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
-  rollLocation: { fontSize: 11, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 4 },
+  rollName: { fontSize: 18, fontWeight: "bold", color: COLORS.textPrimary, fontFamily: "Courier New", marginBottom: 4 },
+  filmName: { fontSize: 14, color: COLORS.textSecondary, fontFamily: "Courier New" },
+  meta: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
+  rollLocation: { fontSize: 14, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 4 },
   shotCount: { fontSize: 28, fontWeight: "bold", color: COLORS.amber, fontFamily: "Courier New" },
-  shotCountLabel: { fontSize: 10, color: COLORS.textDim, fontFamily: "Courier New" },
+  shotCountLabel: { fontSize: 13, color: COLORS.textDim, fontFamily: "Courier New" },
 
   progressBg: { height: 2, backgroundColor: COLORS.bgElevated, marginBottom: 14 },
   progressFill: { height: "100%", backgroundColor: COLORS.amber },
 
-  statusRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  statusRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 },
+  statusActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
   badge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText: { fontSize: 9, letterSpacing: 2, textTransform: "uppercase", fontFamily: "Courier New" },
-  advanceBtn: { paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.amberDim },
-  advanceText: { fontSize: 10, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 1 },
+  badgeText: { fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: "Courier New" },
+  backupCard: { marginTop: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard, padding: 12 },
+  backupOk: { fontSize: 14, color: "#87c987", fontFamily: "Courier New", marginBottom: 4 },
+  backupBad: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New", lineHeight: 21 },
+  backupLine: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", lineHeight: 21 },
+  backupBtn: { marginTop: 10, fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", letterSpacing: 0.5, textTransform: "uppercase" },
+  dropoffCard: { marginTop: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard, padding: 10 },
+  dropoffTitle: { fontSize: 15, color: COLORS.textPrimary, fontFamily: "Courier New" },
+  dropoffLine: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 3 },
+  advanceBtn: { minHeight: 44, maxWidth: "100%", justifyContent: "center", paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.amberDim },
+  advanceText: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", letterSpacing: 0.5, flexShrink: 1 },
 
-  actionRow: { flexDirection: "row", gap: 16, borderTopWidth: 1, borderTopColor: COLORS.borderSubtle, paddingTop: 12 },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 16, borderTopWidth: 1, borderTopColor: COLORS.borderSubtle, paddingTop: 12 },
   actionBtn: {},
-  actionEdit: { fontSize: 11, color: COLORS.amber, fontFamily: "Courier New" },
-  actionDelete: { fontSize: 11, color: COLORS.danger, fontFamily: "Courier New" },
-  confirmText: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", marginRight: 8 },
+  actionEdit: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New" },
+  actionDelete: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New" },
+  confirmText: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", marginRight: 8 },
 
   importBtn: {
     borderWidth: 1, borderColor: COLORS.amberDim,
     paddingVertical: 10, alignItems: "center", marginBottom: 16,
   },
-  importBtnText: { fontSize: 10, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 1.5, textTransform: "uppercase" },
+  importBtnText: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", letterSpacing: 0.5, textTransform: "uppercase" },
   rollActions: { flexDirection: "row" as const, gap: 8, marginBottom: 16 },
   rollActionBtn: {
     flex: 1, borderWidth: 1, borderColor: COLORS.border,
     paddingVertical: 10, alignItems: "center" as const,
   },
-  rollActionText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1.5, textTransform: "uppercase" as const },
+  rollActionText: { fontSize: 13, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 0.5, textTransform: "uppercase" as const },
   filmStripBtn: {
     borderWidth: 1, borderColor: COLORS.border,
     paddingVertical: 10, alignItems: "center", marginBottom: 16,
@@ -1944,11 +2215,11 @@ const s = StyleSheet.create({
   filmStripBtnText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1.5, textTransform: "uppercase" },
 
   sectionTitle: {
-    fontSize: 9, color: COLORS.amber, letterSpacing: 3, textTransform: "uppercase",
+    fontSize: 15, color: COLORS.amberLight, letterSpacing: 1, textTransform: "uppercase",
     fontFamily: "Courier New", marginBottom: 12, paddingBottom: 8,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  emptyShots: { fontSize: 11, color: COLORS.textDim, fontFamily: "Courier New", lineHeight: 18 },
+  emptyShots: { fontSize: 14, color: COLORS.textDim, fontFamily: "Courier New", lineHeight: 21 },
   rollFull: { fontSize: 11, color: COLORS.amber, fontFamily: "Courier New", marginTop: 8 },
   shotEditHint: { fontSize: 16, color: COLORS.textDim, alignSelf: "center" },
 
@@ -1965,15 +2236,15 @@ const s = StyleSheet.create({
   shotThumbNum: { fontSize: 16, color: COLORS.amberDim, fontFamily: "Courier New", fontWeight: "bold" },
   shotFields: { flex: 1, paddingTop: 2 },
   shotFieldsTop: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 3 },
-  shotFrameTag: { fontSize: 9, color: COLORS.amberDim, fontFamily: "Courier New", letterSpacing: 1 },
-  shotExposure: { fontSize: 13, color: COLORS.textPrimary, fontFamily: "Courier New" },
-  shotLighting: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
-  shotSubject: { fontSize: 11, color: COLORS.textSecondary, fontFamily: "Courier New", marginTop: 3 },
-  shotNotes: { fontSize: 10, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 4, fontStyle: "italic", lineHeight: 15 },
-  shotPin: { fontSize: 9, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 3, letterSpacing: 0.3 },
-  shotMeta: { fontSize: 9, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 2, fontStyle: "italic", letterSpacing: 0.3 },
-  shotStars: { fontSize: 10, color: COLORS.amber, fontFamily: "Courier New", marginTop: 3, letterSpacing: 1 },
-  shotTags: { fontSize: 9, color: COLORS.amberDim, fontFamily: "Courier New", marginTop: 2, letterSpacing: 0.5 },
+  shotFrameTag: { fontSize: 13, color: COLORS.amberLight, fontFamily: "Courier New", letterSpacing: 0.5 },
+  shotExposure: { fontSize: 14, color: COLORS.textPrimary, fontFamily: "Courier New" },
+  shotLighting: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
+  shotSubject: { fontSize: 14, color: COLORS.textSecondary, fontFamily: "Courier New", marginTop: 3 },
+  shotNotes: { fontSize: 14, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 4, fontStyle: "italic", lineHeight: 20 },
+  shotPin: { fontSize: 13, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 3 },
+  shotMeta: { fontSize: 13, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 2, fontStyle: "italic" },
+  shotStars: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", marginTop: 3, letterSpacing: 1 },
+  shotTags: { fontSize: 13, color: COLORS.amberLight, fontFamily: "Courier New", marginTop: 2 },
 
   // Zoom hint overlay on thumbnail
   shotThumbZoomHint: {
@@ -2053,11 +2324,12 @@ const m = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
   sheet: { backgroundColor: COLORS.bgElevated, borderTopWidth: 1, borderTopColor: COLORS.border, maxHeight: "90%", padding: 24 },
   innerSheet: { backgroundColor: COLORS.bgElevated, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 20, paddingBottom: 32 },
-  title: { fontSize: 11, color: COLORS.amber, letterSpacing: 2, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 16 },
-  label: { fontSize: 9, color: COLORS.textMuted, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 14 },
+  title: { fontSize: 16, color: COLORS.amberLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 16 },
+  label: { fontSize: 14, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 14 },
+  sectionLabel: { fontSize: 11, color: COLORS.amber, letterSpacing: 2, textTransform: "uppercase", fontFamily: "Courier New", marginTop: 24, paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
   input: {
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
-    color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 13,
+    color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 16,
     paddingHorizontal: 12, paddingVertical: 10,
   },
   inputMulti: { height: 64, textAlignVertical: "top" },
@@ -2078,9 +2350,9 @@ const m = StyleSheet.create({
   errorText: { fontSize: 10, color: COLORS.danger, fontFamily: "Courier New", lineHeight: 16, marginBottom: 8 },
   actions: { flexDirection: "row", gap: 12, marginTop: 20, marginBottom: 16 },
   btnPrimary: { flex: 1, backgroundColor: COLORS.amber, paddingVertical: 12, alignItems: "center" },
-  btnPrimaryText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
+  btnPrimaryText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 14, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: "bold" },
   btnSecondary: { flex: 1, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 12, alignItems: "center" },
-  btnSecondaryText: { color: COLORS.textMuted, fontFamily: "Courier New", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
+  btnSecondaryText: { color: COLORS.textMuted, fontFamily: "Courier New", fontSize: 14, letterSpacing: 0.5, textTransform: "uppercase" },
   btnDisabled: { opacity: 0.4 },
   option: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.borderSubtle },
   optionActive: { backgroundColor: COLORS.bgCard },
@@ -2130,6 +2402,7 @@ const m = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg,
   },
   orientBtnActive: { borderColor: COLORS.amber, backgroundColor: COLORS.amberDim },
+  rotationHint: { fontSize: 12, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 6 },
   orientBtnText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1, textTransform: "uppercase" as const },
   orientBtnTextActive: { color: COLORS.textPrimary },
   resolveBtn: {
@@ -2170,8 +2443,7 @@ const m = StyleSheet.create({
   },
   scanLbClose: { position: "absolute", top: 16, right: 16, padding: 8, zIndex: 2 },
   scanLbCloseText: { fontSize: 20, color: "rgba(255,255,255,0.85)" },
-  scanLbImageWrap: { width: "100%", flex: 1, paddingHorizontal: 16, paddingVertical: 48 },
-  scanLbImage: { width: "100%", height: "100%" },
+  scanLbImageWrap: { width: "90%", flex: 1, marginVertical: 48, alignItems: "center", justifyContent: "center" },
   scanLbHint: {
     fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: "Courier New",
     letterSpacing: 0.8, paddingBottom: 20,
@@ -2247,7 +2519,7 @@ const fs = StyleSheet.create({
     paddingHorizontal: (FRAME_W - PHOTO_W) / 2,
     backgroundColor: "transparent",
   },
-  framePhoto: { width: PHOTO_W, height: PHOTO_H },
+  framePhoto: { width: PHOTO_W, height: PHOTO_H, alignItems: "center", justifyContent: "center" },
   frameEmpty: {
     width: PHOTO_W, height: PHOTO_H,
     backgroundColor: "#080808",

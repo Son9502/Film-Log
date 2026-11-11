@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity,
+  Text, TextInput, TouchableOpacity,
   ActivityIndicator, StyleSheet,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/services/supabase";
 import { updatePassword } from "@/services/supabase";
 import { COLORS } from "@/constants";
+import AuthScreen from "@/components/AuthScreen";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -78,7 +79,7 @@ export default function ResetPasswordScreen() {
 
   if (done) {
     return (
-      <View style={s.container}>
+      <AuthScreen>
         <Text style={s.title}>Password Updated</Text>
         <Text style={s.subtitle}>
           Your password has been changed.{"\n"}Sign in with your new credentials.
@@ -86,13 +87,13 @@ export default function ResetPasswordScreen() {
         <TouchableOpacity style={s.primaryBtn} onPress={() => router.replace("/auth/login")}>
           <Text style={s.primaryBtnText}>Sign In</Text>
         </TouchableOpacity>
-      </View>
+      </AuthScreen>
     );
   }
 
   if (!ready) {
     return (
-      <View style={s.container}>
+      <AuthScreen>
         {error ? (
           <>
             <Text style={s.error}>{error}</Text>
@@ -106,12 +107,12 @@ export default function ResetPasswordScreen() {
             <Text style={s.waiting}>Verifying reset link…</Text>
           </>
         )}
-      </View>
+      </AuthScreen>
     );
   }
 
   return (
-    <View style={s.container}>
+    <AuthScreen>
       <Text style={s.title}>New Password</Text>
       <Text style={s.subtitle}>Choose a strong password for your account.</Text>
 
@@ -123,7 +124,7 @@ export default function ResetPasswordScreen() {
         value={password}
         onChangeText={setPassword}
         placeholder="Min. 8 characters"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         secureTextEntry
         autoFocus
       />
@@ -134,7 +135,7 @@ export default function ResetPasswordScreen() {
         value={confirm}
         onChangeText={setConfirm}
         placeholder="Re-enter password"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         secureTextEntry
       />
 
@@ -148,48 +149,44 @@ export default function ResetPasswordScreen() {
           : <Text style={s.primaryBtnText}>Update Password</Text>
         }
       </TouchableOpacity>
-    </View>
+    </AuthScreen>
   );
 }
 
 const s = StyleSheet.create({
-  container: {
-    flex: 1, backgroundColor: COLORS.bg,
-    padding: 24, justifyContent: "center",
-  },
   title: {
     fontSize: 22, color: COLORS.amber, fontFamily: "Courier New",
     letterSpacing: 4, textTransform: "uppercase", marginBottom: 4,
   },
   subtitle: {
-    fontSize: 11, color: COLORS.textDim, fontFamily: "Courier New",
-    marginBottom: 32, lineHeight: 18,
+    fontSize: 15, color: COLORS.textMuted, fontFamily: "Courier New",
+    marginBottom: 24, lineHeight: 22,
   },
   label: {
-    fontSize: 9, color: COLORS.textMuted, letterSpacing: 1.5,
+    fontSize: 14, color: COLORS.textSecondary, letterSpacing: 1,
     textTransform: "uppercase", fontFamily: "Courier New",
     marginBottom: 6, marginTop: 16,
   },
   input: {
     backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border,
-    color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 13,
+    color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 16, minHeight: 48,
     paddingHorizontal: 12, paddingVertical: 10,
   },
   primaryBtn: {
-    marginTop: 24, backgroundColor: COLORS.amber,
-    paddingVertical: 14, alignItems: "center",
+    marginTop: 24, minHeight: 48, backgroundColor: COLORS.amber,
+    paddingVertical: 12, alignItems: "center", justifyContent: "center",
   },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: {
     color: COLORS.bg, fontFamily: "Courier New",
-    fontSize: 11, letterSpacing: 2, textTransform: "uppercase",
+    fontSize: 15, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase",
   },
   error: {
-    fontSize: 11, color: COLORS.danger, fontFamily: "Courier New",
-    marginBottom: 8, lineHeight: 18,
+    fontSize: 14, color: "#ff9588", fontFamily: "Courier New",
+    marginBottom: 8, lineHeight: 20,
   },
   waiting: {
-    marginTop: 16, fontSize: 11, color: COLORS.textDim,
+    marginTop: 16, fontSize: 15, color: COLORS.textMuted,
     fontFamily: "Courier New", textAlign: "center",
   },
 });

@@ -17,6 +17,26 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// ── Film inventory ────────────────────────────────────────────────────────────
+export function isExpired(expiresAt?: string): boolean {
+  return !!expiresAt && expiresAt < todayISO();
+}
+
+export function rollsRemaining(p: { quantity: number; quantityLoaded: number }): number {
+  return Math.max(0, p.quantity - p.quantityLoaded);
+}
+
+export function hasDuplicateRollName(
+  name: string,
+  rolls: { id: string; name?: string }[],
+  excludeId?: string,
+): boolean {
+  const normalized = name.trim().toLowerCase();
+  return normalized.length > 0 && rolls.some(
+    (roll) => roll.id !== excludeId && roll.name?.trim().toLowerCase() === normalized,
+  );
+}
+
 // ── Frame validation ──────────────────────────────────────────────────────────
 /**
  * Returns an error message if reducing frameCount would orphan existing shots.
@@ -40,11 +60,12 @@ export function rollProgress(shotCount: number, frameCount: number): number {
 // ── Status color map ─────────────────────────────────────────────────────────
 export function statusColors(status: string): { bg: string; fg: string } {
   const map: Record<string, { bg: string; fg: string }> = {
-    Stock:     { bg: "#1a2a1a", fg: "#4a8a4a" },
-    Shooting:  { bg: "#2a1a00", fg: "#b8860b" },
-    "At Lab":  { bg: "#1a1a2a", fg: "#4a4a8a" },
-    Developed: { bg: "#2a2a2a", fg: "#aaaaaa" },
-    Archived:  { bg: "#1a1a1a", fg: "#444444" },
+    Shooting:         { bg: "#2a1a00", fg: "#b8860b" },
+    "To Develop":     { bg: "#2a2410", fg: "#c9a227" },
+    "In Development": { bg: "#2a1a1a", fg: "#e68c7c" },
+    "In Lab":         { bg: "#1a1a2a", fg: "#a9a9ee" },
+    "In Scanning":    { bg: "#2a2a2a", fg: "#aaaaaa" },
+    Archived:         { bg: "#1a1a1a", fg: "#aaaaaa" },
   };
-  return map[status] ?? { bg: "#1a1a1a", fg: "#666" };
+  return map[status] ?? { bg: "#1a1a1a", fg: "#aaaaaa" };
 }

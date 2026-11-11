@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  View, Text, FlatList, TouchableOpacity, Image,
-  StyleSheet, ActivityIndicator, Modal,
+  View, Text, FlatList, TouchableOpacity, Image, ScrollView,
+  StyleSheet, Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
@@ -10,10 +10,14 @@ import { unzip } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import { supabase } from "@/services/supabase";
+import ScanUploadProgress from "@/components/ScanUploadProgress";
+import { backOrReplace } from "@/utils/navigation";
+import { useScanImportFrames } from "@/utils/useScanImportFrames";
+import { assignScanFrames, identifyScanFiles } from "@/utils/scanImport";
 
 const IMAGE_EXTS = /\.(jpg|jpeg|png|heic|heif|tiff|tif)$/i;
 
-type FileEntry = { name: string; uri: string; data?: Uint8Array; ext: string };
+type FileEntry = { id: string; name: string; uri: string; ownedUri?: boolean; ext: string };
 type Assignments = Record<string, number | null>;
 
 async function uploadRaw(
@@ -33,6 +37,7 @@ export default function ImportScansScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { rolls, updateShot, user } = useFilmLogStore();
+  const { create, creating } = useScanImportFrames();
 
   const roll = rolls.find((r) => r.id === id);
 
@@ -43,7 +48,13 @@ export default function ImportScansScreen() {
   const [uploadDone, setUploadDone] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
   const [uploadFailed, setUploadFailed] = useState(0);
+  const [currentFile, setCurrentFile] = useState<string>();
+  const [failures, setFailures] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => () => {
+    files.forEach((file) => { if (file.ownedUri) URL.revokeObjectURL(file.uri); });
+  }, [files]);
 
   if (!roll) {
     return (
@@ -56,12 +67,15 @@ export default function ImportScansScreen() {
   const sortedShots = [...roll.shots].sort((a, b) => a.frame - b.frame);
   const frameNumbers = sortedShots.map((sh) => sh.frame);
 
-  function autoAssign(imageFiles: FileEntry[]): Assignments {
-    const map: Assignments = {};
-    imageFiles.forEach((f, i) => {
-      map[f.name] = frameNumbers[i] ?? null;
-    });
-    return map;
+  async function createFramesForPhotos() {
+    setError(null);
+    try {
+      const result = await create(roll!.id, files.map((file) => file.id), frameNumbers, assignments);
+      if (result) setAssignments(result);
+    } catch (e: unknown) {
+      console.error("Could not create scan frames:", e);
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function pickZip() {
@@ -74,24 +88,26 @@ export default function ImportScansScreen() {
       if (result.canceled) return;
 
       const response = await fetch(result.assets[0].uri);
+      if (!response.ok) throw new Error(`Could not read the ZIP file (HTTP ${response.status}).`);
       const buffer = await response.arrayBuffer();
 
       const unzipped = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-        unzip(new Uint8Array(buffer), (err, files) => {
+        unzip(new Uint8Array(buffer), {
+          filter: (entry) => IMAGE_EXTS.test(entry.name) && !entry.name.startsWith("__MACOSX"),
+        }, (err, files) => {
           if (err) reject(err);
           else resolve(files);
         });
       });
 
-      const imageFiles: FileEntry[] = Object.entries(unzipped)
-        .filter(([name]) => IMAGE_EXTS.test(name) && !name.startsWith("__MACOSX"))
+      const imageFiles: FileEntry[] = identifyScanFiles(Object.entries(unzipped)
         .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
         .map(([name, data]) => {
           const ext = name.split(".").pop()?.toLowerCase() ?? "jpg";
           const blob = new Blob([new Uint8Array(data)], { type: "image/jpeg" });
           const uri = URL.createObjectURL(blob);
-          return { name, uri, data, ext };
-        });
+          return { name, uri, ownedUri: true, ext };
+        }));
 
       if (imageFiles.length === 0) {
         setError("No image files found in the ZIP.");
@@ -99,7 +115,7 @@ export default function ImportScansScreen() {
       }
 
       setFiles(imageFiles);
-      setAssignments(autoAssign(imageFiles));
+      setAssignments(assignScanFrames(imageFiles, frameNumbers));
       setStep("preview");
     } catch (e: any) {
       setError(e.message ?? "Failed to read ZIP file.");
@@ -121,14 +137,14 @@ export default function ImportScansScreen() {
         return;
       }
 
-      const imageFiles: FileEntry[] = result.assets.map((asset, i) => {
+      const imageFiles: FileEntry[] = identifyScanFiles(result.assets.map((asset, i) => {
         const name = asset.fileName ?? `photo_${i + 1}.jpg`;
         const ext = name.split(".").pop()?.toLowerCase() ?? "jpg";
         return { name, uri: asset.uri, ext };
-      });
+      }));
 
       setFiles(imageFiles);
-      setAssignments(autoAssign(imageFiles));
+      setAssignments(assignScanFrames(imageFiles, frameNumbers));
       setStep("preview");
     } catch (e: any) {
       setError(e.message ?? "Failed to pick photos.");
@@ -141,7 +157,7 @@ export default function ImportScansScreen() {
       return;
     }
 
-    const toUpload = files.filter((f) => assignments[f.name] !== null);
+    const toUpload = files.filter((f) => assignments[f.id] != null);
     if (toUpload.length === 0) {
       setError("Assign at least one file to a frame.");
       return;
@@ -151,45 +167,48 @@ export default function ImportScansScreen() {
     setUploadTotal(toUpload.length);
     setUploadDone(0);
     setUploadFailed(0);
+    setFailures([]);
 
     const r = roll!;
     let done = 0;
     let failed = 0;
     for (const file of toUpload) {
-      const frameNum = assignments[file.name];
-      const shot = r.shots.find((sh) => sh.frame === frameNum);
-      if (!shot) continue;
+      setCurrentFile(file.name);
+      const frameNum = assignments[file.id];
+      // Read the frame fresh: sync may have merged changes from another device mid-import.
+      const shot = useFilmLogStore.getState().rolls.find((x) => x.id === r.id)?.shots.find((sh) => sh.frame === frameNum);
       try {
-        let data = file.data;
-        if (!data) {
-          const resp = await fetch(file.uri);
-          data = new Uint8Array(await resp.arrayBuffer());
-        }
+        if (!shot) throw new Error("The assigned frame no longer exists.");
+        const resp = await fetch(file.uri);
+        if (!resp.ok) throw new Error(`Could not read the file (HTTP ${resp.status}).`);
+        const data = new Uint8Array(await resp.arrayBuffer());
         const path = await uploadRaw(user.id, r.id, shot.id, data, file.ext);
         updateShot(r.id, { ...shot, scanUri: path });
         done++;
         setUploadDone(done);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error(`Upload failed for frame ${frameNum}:`, e);
+        const message = e instanceof Error ? e.message : String(e);
+        setFailures((previous) => [...previous, `${file.name}: ${message}`]);
         failed++;
         setUploadFailed(failed);
       }
     }
 
-    files.forEach((f) => { if (f.uri.startsWith("blob:")) URL.revokeObjectURL(f.uri); });
+    setFiles([]);
     setStep("done");
   }
 
-  function assignFrame(filename: string, frame: number | null) {
+  function assignFrame(fileId: string, frame: number | null) {
     setAssignments((prev) => {
       const next = { ...prev };
       if (frame !== null) {
         const prevOwner = Object.keys(next).find(
-          (k) => k !== filename && next[k] === frame,
+          (k) => k !== fileId && next[k] === frame,
         );
         if (prevOwner) next[prevOwner] = null;
       }
-      next[filename] = frame;
+      next[fileId] = frame;
       return next;
     });
     setAssigningFile(null);
@@ -198,16 +217,18 @@ export default function ImportScansScreen() {
   // ── Done ──────────────────────────────────────────────────────────────────────
   if (step === "done") {
     return (
-      <View style={s.center}>
-        <Text style={s.doneTitle}>{uploadDone > 0 ? "Import Complete" : "Import Failed"}</Text>
+      <ScrollView style={{ flex: 1, backgroundColor: COLORS.bg }} contentContainerStyle={[s.center, { flex: 0, flexGrow: 1 }]}>
+        <Text style={s.doneTitle}>{uploadFailed > 0 ? (uploadDone > 0 ? "Import Partially Complete" : "Import Failed") : "Import Complete"}</Text>
         <Text style={s.doneSub}>
           {uploadDone} scan{uploadDone !== 1 ? "s" : ""} uploaded.
           {uploadFailed > 0 && `\n${uploadFailed} failed — check your connection and Supabase storage bucket.`}
+          {"\nFrame metadata sync is separate; verify your scans on another device before deleting originals."}
         </Text>
-        <TouchableOpacity style={s.btnBlock} onPress={() => router.back()}>
+        {failures.map((failure, index) => <Text key={index} style={s.error}>{failure}</Text>)}
+        <TouchableOpacity style={s.btnBlock} onPress={() => backOrReplace(router, { pathname: "/roll/[id]", params: { id: roll.id } })}>
           <Text style={s.btnText}>Back to Roll</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -215,8 +236,7 @@ export default function ImportScansScreen() {
   if (step === "uploading") {
     return (
       <View style={s.center}>
-        <ActivityIndicator color={COLORS.amber} size="large" />
-        <Text style={s.uploadingText}>{uploadDone} / {uploadTotal} uploaded</Text>
+        <ScanUploadProgress uploaded={uploadDone} failed={uploadFailed} total={uploadTotal} currentFile={currentFile} />
       </View>
     );
   }
@@ -231,21 +251,16 @@ export default function ImportScansScreen() {
           and matched to frames in order — you can reassign them before uploading.
         </Text>
         {error && <Text style={s.error}>{error}</Text>}
-        {roll.shots.length === 0 && (
-          <Text style={s.warning}>Log at least one frame before importing scans.</Text>
-        )}
         <TouchableOpacity
-          style={[s.optionBtn, roll.shots.length === 0 && s.btnDisabled]}
+          style={s.optionBtn}
           onPress={pickZip}
-          disabled={roll.shots.length === 0}
         >
           <Text style={s.optionBtnTitle}>Select ZIP File</Text>
           <Text style={s.optionBtnSub}>Extract and import a ZIP of scan images</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[s.optionBtn, roll.shots.length === 0 && s.btnDisabled]}
+          style={s.optionBtn}
           onPress={pickPhotos}
-          disabled={roll.shots.length === 0}
         >
           <Text style={s.optionBtnTitle}>Select Individual Photos</Text>
           <Text style={s.optionBtnSub}>Pick one or more images from your library</Text>
@@ -263,7 +278,7 @@ export default function ImportScansScreen() {
     <View style={s.container}>
       <FlatList
         data={files}
-        keyExtractor={(f) => f.name}
+        keyExtractor={(f) => f.id}
         contentContainerStyle={s.listContent}
         ListHeaderComponent={
           <>
@@ -273,20 +288,27 @@ export default function ImportScansScreen() {
               <View style={s.mismatchBanner}>
                 {files.length > frameNumbers.length ? (
                   <Text style={s.mismatchText}>
-                    {files.length} photos · {frameNumbers.length} frames —{" "}
+                    {files.length} photos · {frameNumbers.length} frame{frameNumbers.length === 1 ? "" : "s"} —{" "}
                     <Text style={s.mismatchHighlight}>
                       {unassignedFiles} photo{unassignedFiles !== 1 ? "s" : ""} won't be imported
                     </Text>
-                    . Tap rows to reassign.
+                    . Create the missing frames or tap rows to reassign.
                   </Text>
                 ) : (
                   <Text style={s.mismatchText}>
-                    {files.length} photos · {frameNumbers.length} frames —{" "}
+                    {files.length} photos · {frameNumbers.length} frame{frameNumbers.length === 1 ? "" : "s"} —{" "}
                     <Text style={s.mismatchHighlight}>
                       {framesWithoutScan} frame{framesWithoutScan !== 1 ? "s" : ""} won't have a scan
                     </Text>
                     . Tap rows to reassign.
                   </Text>
+                )}
+                {files.length > frameNumbers.length && (
+                  <TouchableOpacity style={s.createFramesBtn} onPress={createFramesForPhotos} disabled={creating}>
+                    <Text style={s.createFramesText}>
+                      {creating ? "Creating frames…" : `Create ${files.length - frameNumbers.length} missing frame${files.length - frameNumbers.length === 1 ? "" : "s"}`}
+                    </Text>
+                  </TouchableOpacity>
                 )}
               </View>
             )}
@@ -297,10 +319,10 @@ export default function ImportScansScreen() {
           </>
         }
         renderItem={({ item }) => {
-          const frame = assignments[item.name];
+          const frame = assignments[item.id];
           return (
-            <TouchableOpacity style={s.fileRow} onPress={() => setAssigningFile(item.name)}>
-              <Image source={{ uri: item.uri }} style={s.fileThumb} resizeMode="cover" />
+            <TouchableOpacity style={s.fileRow} onPress={() => setAssigningFile(item.id)} disabled={creating}>
+              <Image source={{ uri: item.uri }} style={s.fileThumb} resizeMode="contain" />
               <View style={s.fileInfo}>
                 <Text style={s.fileName} numberOfLines={1}>{item.name}</Text>
                 <Text style={frame !== null ? s.frameAssigned : s.frameUnassigned}>
@@ -315,10 +337,10 @@ export default function ImportScansScreen() {
           <View style={s.footer}>
             {error && <Text style={s.error}>{error}</Text>}
             <View style={s.footerBtns}>
-              <TouchableOpacity style={s.btnSecondary} onPress={() => setStep("pick")}>
+              <TouchableOpacity style={s.btnSecondary} onPress={() => setStep("pick")} disabled={creating}>
                 <Text style={s.btnSecondaryText}>Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.btn} onPress={confirmImport}>
+              <TouchableOpacity style={[s.btn, creating && s.btnDisabled]} onPress={confirmImport} disabled={creating}>
                 <Text style={s.btnText}>
                   Upload {assignedCount} Scan{assignedCount !== 1 ? "s" : ""}
                 </Text>
@@ -359,7 +381,7 @@ export default function ImportScansScreen() {
                   </Text>
                   {takenBy && !isCurrentFile && (
                     <Text style={s.pickerOptionSub} numberOfLines={1}>
-                      Currently: {takenBy}
+                      Currently: {files.find((file) => file.id === takenBy)?.name}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -383,38 +405,40 @@ const s = StyleSheet.create({
   listContent: { paddingBottom: 32 },
 
   sectionTitle: {
-    fontSize: 9, color: COLORS.amber, letterSpacing: 3, textTransform: "uppercase",
+    fontSize: 16, color: COLORS.amberLight, letterSpacing: 1, textTransform: "uppercase",
     fontFamily: "Courier New", marginBottom: 10, paddingBottom: 8,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   instructions: {
-    fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New",
-    lineHeight: 18, marginBottom: 16,
+    fontSize: 15, color: COLORS.textMuted, fontFamily: "Courier New",
+    lineHeight: 22, marginBottom: 16,
   },
-  warning: { fontSize: 11, color: COLORS.amberLight, fontFamily: "Courier New", marginBottom: 16 },
-  error: { fontSize: 11, color: COLORS.danger, fontFamily: "Courier New", marginBottom: 12, lineHeight: 18 },
-  muted: { fontSize: 12, color: COLORS.textMuted, fontFamily: "Courier New" },
+  warning: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", marginBottom: 16 },
+  error: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New", marginBottom: 12, lineHeight: 20 },
+  muted: { fontSize: 15, color: COLORS.textMuted, fontFamily: "Courier New" },
 
   optionBtn: {
     borderWidth: 1, borderColor: COLORS.border,
     padding: 16, marginBottom: 12, backgroundColor: COLORS.bgCard,
   },
-  optionBtnTitle: { fontSize: 12, color: COLORS.textPrimary, fontFamily: "Courier New", marginBottom: 4 },
-  optionBtnSub: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New" },
+  optionBtnTitle: { fontSize: 16, color: COLORS.textPrimary, fontFamily: "Courier New", marginBottom: 4 },
+  optionBtnSub: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New" },
 
   mismatchBanner: {
     borderWidth: 1, borderColor: COLORS.amberDim,
     backgroundColor: COLORS.bgCard, padding: 12, marginBottom: 12,
   },
-  mismatchText: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", lineHeight: 18 },
+  mismatchText: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", lineHeight: 21 },
+  createFramesBtn: { marginTop: 10, borderWidth: 1, borderColor: COLORS.amber, padding: 10, alignItems: "center" },
+  createFramesText: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", textAlign: "center" },
   mismatchHighlight: { color: COLORS.amber },
 
   btn: { flex: 1, backgroundColor: COLORS.amber, paddingVertical: 14, alignItems: "center" },
   btnBlock: { backgroundColor: COLORS.amber, paddingVertical: 14, paddingHorizontal: 40, alignItems: "center" },
-  btnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" },
+  btnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 14, letterSpacing: 1, textTransform: "uppercase", fontWeight: "bold" },
   btnDisabled: { opacity: 0.4 },
   btnSecondary: { flex: 1, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 14, alignItems: "center", marginRight: 12 },
-  btnSecondaryText: { color: COLORS.textMuted, fontFamily: "Courier New", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
+  btnSecondaryText: { color: COLORS.textMuted, fontFamily: "Courier New", fontSize: 14, letterSpacing: 1, textTransform: "uppercase" },
 
   fileRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
@@ -422,17 +446,16 @@ const s = StyleSheet.create({
   },
   fileThumb: { width: 52, height: 52, backgroundColor: COLORS.bgCard },
   fileInfo: { flex: 1 },
-  fileName: { fontSize: 12, color: COLORS.textPrimary, fontFamily: "Courier New" },
-  frameAssigned: { fontSize: 10, color: COLORS.amber, fontFamily: "Courier New", marginTop: 3 },
-  frameUnassigned: { fontSize: 10, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 3 },
+  fileName: { fontSize: 14, color: COLORS.textPrimary, fontFamily: "Courier New" },
+  frameAssigned: { fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", marginTop: 3 },
+  frameUnassigned: { fontSize: 14, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 3 },
   chevron: { fontSize: 18, color: COLORS.textDim },
 
   footer: { paddingTop: 20 },
   footerBtns: { flexDirection: "row" },
 
   doneTitle: { fontSize: 16, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 },
-  doneSub: { fontSize: 12, color: COLORS.textMuted, fontFamily: "Courier New", marginBottom: 32 },
-  uploadingText: { fontSize: 12, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 16 },
+  doneSub: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", lineHeight: 21, marginBottom: 24 },
 
   pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
   pickerSheet: {
@@ -440,7 +463,7 @@ const s = StyleSheet.create({
     borderTopColor: COLORS.border, paddingTop: 20, paddingBottom: 40, maxHeight: "80%",
   },
   pickerTitle: {
-    fontSize: 9, color: COLORS.amber, letterSpacing: 3, textTransform: "uppercase",
+    fontSize: 15, color: COLORS.amberLight, letterSpacing: 1, textTransform: "uppercase",
     fontFamily: "Courier New", marginBottom: 8, paddingHorizontal: 20,
   },
   pickerOption: {
@@ -450,8 +473,8 @@ const s = StyleSheet.create({
   pickerOptionActive: { backgroundColor: COLORS.bgCard },
   pickerOptionText: { fontSize: 13, color: COLORS.textSecondary, fontFamily: "Courier New" },
   pickerOptionTextActive: { color: COLORS.amber },
-  pickerOptionSub: { fontSize: 10, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 2 },
+  pickerOptionSub: { fontSize: 13, color: COLORS.textDim, fontFamily: "Courier New", marginTop: 2 },
   pickerOptionMuted: { fontSize: 13, color: COLORS.textDim, fontFamily: "Courier New" },
   pickerCancel: { paddingVertical: 16, alignItems: "center" },
-  pickerCancelText: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1 },
+  pickerCancelText: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1 },
 });

@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { View, Text, TouchableOpacity } from "react-native";
-import { COLORS } from "@/constants";
+import { Text, TouchableOpacity, ColorValue } from "react-native";
+import { COLORS, SOCIAL_ENABLED } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { signOut } from "@/services/supabase";
 
@@ -10,33 +10,19 @@ export default function TabLayout() {
   function HeaderAccount() {
     if (!user) return null;
     return (
-      <View style={{ alignItems: "flex-end", marginRight: 16 }}>
-        <Text
-          style={{
-            fontSize: 8, color: COLORS.textDim,
-            fontFamily: "Courier New", letterSpacing: 0.5,
-          }}
-          numberOfLines={1}
-        >
-          User logged in: {user.email}
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Sign out ${user.email}`}
+        style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 16 }}
+        onPress={async () => {
+          await signOut();
+          clearUserData();
+        }}
+      >
+        <Text style={{ fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", fontWeight: "bold" }}>
+          Sign Out
         </Text>
-        <TouchableOpacity
-          onPress={async () => {
-            await signOut();
-            clearUserData();
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 8, color: COLORS.amber,
-              fontFamily: "Courier New", letterSpacing: 1.5,
-              textTransform: "uppercase", marginTop: 2,
-            }}
-          >
-            Sign Out
-          </Text>
-        </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
     );
   }
 
@@ -49,11 +35,11 @@ export default function TabLayout() {
           borderTopWidth: 1,
         },
         tabBarActiveTintColor: COLORS.amber,
-        tabBarInactiveTintColor: COLORS.textDim,
+        tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: {
           fontFamily: "Courier New",
-          fontSize: 9,
-          letterSpacing: 1,
+          fontSize: 11,
+          letterSpacing: 0,
           textTransform: "uppercase",
         },
         headerStyle: { backgroundColor: COLORS.bg },
@@ -61,7 +47,7 @@ export default function TabLayout() {
         headerTitleStyle: {
           fontFamily: "Courier New",
           letterSpacing: 3,
-          fontSize: 11,
+          fontSize: 15,
           textTransform: "uppercase",
         },
         headerRight: () => <HeaderAccount />,
@@ -77,11 +63,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="map"
+        name="inventory"
         options={{
-          title: "Map",
+          title: "Film Stash",
           tabBarIcon: ({ color }) => (
-            <TabIcon label="🗺" color={color} />
+            <TabIcon label="📦" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="develop"
+        options={{
+          title: "Develop",
+          tabBarIcon: ({ color }) => (
+            <TabIcon label="🧪" color={color} />
           ),
         }}
       />
@@ -98,6 +93,7 @@ export default function TabLayout() {
         name="walks"
         options={{
           title: "Walks",
+          href: SOCIAL_ENABLED ? undefined : null,
           tabBarIcon: ({ color }) => (
             <TabIcon label="🚶" color={color} />
           ),
@@ -116,7 +112,7 @@ export default function TabLayout() {
   );
 }
 
-function TabIcon({ label, color }: { label: string; color: string }) {
+function TabIcon({ label, color }: { label: string; color: ColorValue }) {
   const { Text } = require("react-native");
   return <Text style={{ fontSize: 18, color }}>{label}</Text>;
 }

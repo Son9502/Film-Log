@@ -1,9 +1,12 @@
-import { useMemo } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from "react-native";
+import { useMemo, useState } from "react";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { COLORS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { formatDate } from "@/utils";
+import { ShotMap } from "@/components/ShotMap";
+
+type ViewMode = "list" | "map";
 
 interface LocationEntry {
   label: string;
@@ -16,6 +19,9 @@ interface LocationEntry {
 export default function JournalScreen() {
   const router = useRouter();
   const { rolls, journals } = useFilmLogStore();
+  const [mode, setMode] = useState<ViewMode>("list");
+  // The map is stubbed on web, so the toggle only appears on native.
+  const showToggle = Platform.OS !== "web";
 
   const entries = useMemo((): LocationEntry[] => {
     const map = new Map<string, {
@@ -72,18 +78,48 @@ export default function JournalScreen() {
     return m;
   }, [journals]);
 
+  const toggle = showToggle && (
+    <View style={s.toggleRow}>
+      {(["list", "map"] as ViewMode[]).map((m) => (
+        <TouchableOpacity
+          key={m}
+          style={[s.toggleBtn, mode === m && s.toggleBtnActive]}
+          onPress={() => setMode(m)}
+        >
+          <Text style={[s.toggleText, mode === m && s.toggleTextActive]}>
+            {m === "list" ? "List" : "Map"}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  if (mode === "map" && showToggle) {
+    return (
+      <View style={s.container}>
+        {toggle}
+        <ShotMap />
+      </View>
+    );
+  }
+
   if (entries.length === 0) {
     return (
-      <View style={s.empty}>
-        <Text style={s.emptyTitle}>No locations yet</Text>
-        <Text style={s.emptySub}>
-          Add a location label to a roll or frame to start your journal.
-        </Text>
+      <View style={s.container}>
+        {toggle}
+        <View style={s.empty}>
+          <Text style={s.emptyTitle}>No locations yet</Text>
+          <Text style={s.emptySub}>
+            Add a location label to a roll or frame to start your journal.
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
+    <View style={s.container}>
+    {toggle}
     <FlatList
       style={s.list}
       data={entries}
@@ -123,11 +159,29 @@ export default function JournalScreen() {
         );
       }}
     />
+    </View>
   );
 }
 
 const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
   list: { flex: 1, backgroundColor: COLORS.bg },
+
+  toggleRow: {
+    flexDirection: "row", gap: 8, padding: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  toggleBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 8,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  toggleBtnActive: { borderColor: COLORS.amber, backgroundColor: COLORS.bgCard },
+  toggleText: {
+    fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New",
+    letterSpacing: 2, textTransform: "uppercase",
+  },
+  toggleTextActive: { color: COLORS.amber },
   content: { padding: 16, paddingBottom: 80 },
 
   header: {

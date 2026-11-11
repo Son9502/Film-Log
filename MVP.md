@@ -10,7 +10,7 @@ v1 changes direction from the earlier plan. Social features (walks, public profi
 
 ## 1. Status at a glance
 
-_Last reviewed: 2026-10-27._
+_Last reviewed: 2026-11-10._
 
 | Area | Status |
 |---|---|
@@ -19,16 +19,20 @@ _Last reviewed: 2026-10-27._
 | Bulk scan import from a ZIP | ✅ Built (web); native import needs rework (see §4) |
 | Gallery by roll and shot locations | ✅ Built (on web, the shot map is a list grouped by roll) |
 | Scans uploaded to cloud storage | ✅ Built (Supabase `scans` bucket) |
-| New status flow with lab drop-offs | ❌ Not started (the app uses Stock → Shooting → At Lab → Developed → Archived) |
-| "Safe to delete locally" confirmation | ❌ Not started |
-| Reference data, development calculator, step-by-step instructions | ❌ Not started |
-| Chemical sets and batches | ❌ Not started |
-| Film inventory | ❌ Not started (unloaded rolls are tracked as rolls with status "Stock") |
-| Stats card (this month, most-shot stocks, spending) | 🟡 Partial: a 15-metric stats page exists, but not these figures |
-| Search and filters, data export, units setting, expired-film flag | ❌ Not started |
-| Mobile build tested on a phone | ❌ Never tested |
-| Database security fixes | ⚠️ Known issues (see §5) |
-| Automated tests | ❌ No test framework |
+| New status flow with lab drop-offs | ✅ Built (`supabase/08_lab_dropoffs.sql`) |
+| Scan backup check | 🟡 Checks cloud availability; export and open scans to verify their contents before deleting originals |
+| Reference data, development calculator, step-by-step instructions | ✅ Built (B&W, C-41, E-6, ECN-2; data from a workbook, push curves compared with Digitaltruth guidance) |
+| Chemical sets and batches | ✅ Built (`supabase/10`, `17`): batches record fixer, wetting agent, per-roll push/pull and a mix helper; sets list the rolls they developed |
+| Film inventory | ✅ Built (`supabase/07_film_purchases.sql`) |
+| Stats card (this month, most-shot stocks, spending) | ✅ Built (top of the stats page, this month / all time) |
+| Search and filters | ✅ Built (Rolls tab) |
+| Data export | ✅ CSV of rolls and frames; ZIP of scans with JPEG EXIF metadata |
+| Units setting | ✅ °C/°F and km/mi preferences; values stored in metric |
+| Expired-film flag | ✅ Built (Film Stash tab) |
+| Mobile build tested on a phone | 🟡 Runs in Expo Go; flows to re-test now that sync is back (§4) |
+| Database security fixes | 🟡 Script written (`supabase/06_security_hardening.sql`); run it in Supabase and re-test walks and profiles |
+| Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); run the scripts to turn it on |
+| Automated tests | ✅ Jest (`npm test`): calculator, chemistry, summary, filters, CSV |
 | Public deployment | ❌ Not deployed |
 | Public GitHub repo | ✅ Created |
 
@@ -36,9 +40,9 @@ _Last reviewed: 2026-10-27._
 
 ## 2. Roll status flow
 
-A roll moves through five statuses:
+A roll moves through these statuses (a To Develop buffer sits between shooting and development):
 
-**Shooting → In Development → In Lab → In Scanning → Archived**
+**Shooting → To Develop → In Development → In Lab → In Scanning → Archived**
 
 Not every roll visits every status. Which ones it visits depends on whether you develop and scan it yourself or hand it to a lab:
 
@@ -76,7 +80,7 @@ Unshot film no longer counts as a roll. It lives in the inventory (§3.4), and l
 ### 3.2 Storage
 
 - ✅ Scans upload to cloud storage.
-- **"Safe to delete locally":** after an import, the app checks that every scan for the roll has been uploaded and can be fetched back. It then tells you the roll's local copies are safe to delete. A roll shows a "backed up" badge once all its scans pass the check.
+- **Scan backup check:** the app checks whether attached cloud scans respond to a HEAD request and shows a "backed up" badge. This does not verify scan contents or ensure every original is attached. Export the scans and open them before deleting local originals.
 
 ### 3.3 Development
 
@@ -99,9 +103,9 @@ Unshot film no longer counts as a roll. It lives in the inventory (§3.4), and l
 ### 3.5 Usability
 
 - **Search and filters:** filter rolls by film stock, camera, date range, status and location, and search by roll name.
-- **Data export:** a CSV of rolls and frames, plus a ZIP of the original scans per roll. This is required before "safe to delete locally" means anything.
+- **Data export:** a CSV of rolls and frames, plus a ZIP of the original scans per roll. Exported JPEGs include frame metadata in EXIF; TIFFs stay unchanged. This is required before "safe to delete locally" means anything.
 - **Photo metadata on export:** exported JPEG scans get the frame's details written into their EXIF data: camera, ISO, shutter speed, aperture, date shot and GPS, with the film stock and roll name in the image description. Scans in cloud storage stay untouched; metadata is only added to the exported copies. TIFF files are exported without it.
-- **Units:** °C or °F, and metric or imperial. All values are stored in metric and converted for display.
+- **Units:** °C or °F, and kilometers or miles. Values are stored in Celsius/kilometers and converted for display.
 
 ---
 
@@ -111,13 +115,13 @@ v1 must work on a phone, with changes syncing to the web. The code is shared, bu
 
 **Steps:**
 
-1. ✅ **Fix the dependency versions.** Every package now matches Expo SDK 55 (React 19, React Native 0.83, `expo-router` 55), and `npm install` works without `--legacy-peer-deps`.
+1. ✅ **Fix the dependency versions.** Every package now matches Expo SDK 58 (React 19, React Native 0.88, `expo-router` 58), and `npm install` works without `--legacy-peer-deps`.
 2. ✅ **Remove packages that block Expo Go.** Native ZIP import now uses `fflate` with the new `expo-file-system` API instead of `react-native-zip-archive`, and the unused `react-native-share` is gone.
 3. **Run it in Expo Go.** Install Expo Go on your phone, run `npm start` and scan the QR code, with the phone and computer on the same Wi-Fi. The iOS Simulator also works through Xcode (press `i`).
 4. **Walk through the flows on the phone:** sign in, log a roll with GPS, import a ZIP of scans, then check that everything appears on the web.
 v1 runs on the phone through Expo Go only. A standalone install with its own icon (a development build, TestFlight or the App Store) comes after v1.
 
-Also fix the leftovers in `app.json`: add the missing `assets/icon.png`, and replace the placeholder `com.yourname.filmlog` bundle ID.
+✅ `app.json` leftovers are fixed: a placeholder `assets/icon.png` (replace with real artwork) and the bundle ID is `com.sotieojo.filmlog`.
 
 **Done when:** the app runs in Expo Go on your phone with no red-screen errors, and a roll logged on the phone appears on the web, and the reverse.
 
