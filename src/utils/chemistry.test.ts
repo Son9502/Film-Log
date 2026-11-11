@@ -1,4 +1,4 @@
-import { chemSetStatus, chemSetWarning, parseDuration, applyBatchToRolls, batchForRoll, rollIdsForSet } from "./chemistry";
+import { chemSetStatus, chemSetWarning, parseDuration, applyBatchToRolls, batchForRoll, rollIdsForSet, fillMissingFromBatches } from "./chemistry";
 import type { ChemicalSet, DevBatch, Roll } from "@/types";
 
 const set: ChemicalSet = {
@@ -60,5 +60,33 @@ describe("chemistry", () => {
     expect(batchForRoll(batches, "a")?.id).toBe("new");
     expect(batchForRoll(batches, "z")).toBeUndefined();
     expect(rollIdsForSet(batches, "s1")).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("fillMissingFromBatches", () => {
+  const batch: DevBatch = {
+    id: "b1", chemicalSetId: "s1", process: "B&W", tempC: 20, timeSeconds: 405, developedAt: "2026-03-01",
+    rollIds: ["r1", "r2"], fixer: "Ilford Rapid Fixer", wettingAgent: true, createdAt: "2026-03-01T00:00:00Z",
+  };
+  const base = { filmStockId: "f", cameraId: "c", iso: "400", frameCount: 36, status: "In Scanning", loadedAt: "", shots: [], createdAt: "", updatedAt: "" } as unknown as Roll;
+
+  it("fills only empty development details from the roll's batch", () => {
+    const rolls = [
+      { ...base, id: "r1" },
+      { ...base, id: "r2", developer: "My own note", devTime: "7:00" },
+      { ...base, id: "r3" },
+    ];
+    const out = fillMissingFromBatches(rolls, [batch], [set], "now");
+    expect(out[0]).toMatchObject({
+      developedAt: "2026-03-01", developer: "Kodak D-76", dilution: "Stock", devTime: "6:45",
+      devTemp: "20°C", fixer: "Ilford Rapid Fixer", photoFlo: true, updatedAt: "now",
+    });
+    expect(out[1]).toMatchObject({ developer: "My own note", devTime: "7:00", fixer: "Ilford Rapid Fixer" });
+    expect(out[2]).toBe(rolls[2]);
+  });
+
+  it("returns the same array when there's nothing to fill", () => {
+    const rolls = fillMissingFromBatches([{ ...base, id: "r1" }], [batch], [set], "now");
+    expect(fillMissingFromBatches(rolls, [batch], [set], "later")).toBe(rolls);
   });
 });

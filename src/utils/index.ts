@@ -6,7 +6,11 @@ export function uid(): string {
 // ── Date formatting ───────────────────────────────────────────────────────────
 export function formatDate(iso?: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", {
+  // A bare date ("2026-10-20") is a calendar day, not midnight UTC: read it as local
+  // so it doesn't show as the day before west of UTC.
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const date = day ? new Date(+day[1], +day[2] - 1, +day[3]) : new Date(iso);
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",

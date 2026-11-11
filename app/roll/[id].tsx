@@ -1652,6 +1652,16 @@ export default function RollDetailScreen() {
   const dropoff = roll.labDropoffId ? dropoffs.find((d) => d.id === roll.labDropoffId) : undefined;
   const rollBatch = batchForRoll(batches, roll.id);
   const rollBatchSet = rollBatch ? chemSets.find((c) => c.id === rollBatch.chemicalSetId) : undefined;
+  const devRows = ([
+    ["Developed", roll.developedAt ? formatDate(roll.developedAt) : null],
+    ["Developer", roll.developer],
+    ["Dilution", roll.dilution],
+    ["Time", roll.devTime],
+    ["Temperature", roll.devTemp ? displayStoredTemperature(roll.devTemp, temperatureUnit) ?? roll.devTemp : null],
+    ["Push / pull", roll.pushPull ? `${roll.pushPull} stop${Math.abs(parseFloat(roll.pushPull)) === 1 ? "" : "s"}` : null],
+    ["Fixer", roll.fixer],
+    ["Wetting agent", roll.photoFlo == null ? null : roll.photoFlo ? "Yes" : "No"],
+  ] as [string, string | null | undefined][]).filter((r): r is [string, string] => !!r[1]);
   let nextStatuses = NEXT_STATUSES[roll.status] ?? [];
   // Once we know what the lab is doing, only offer the step that follows.
   if (roll.status === "In Lab" && dropoff) {
@@ -1829,18 +1839,6 @@ export default function RollDetailScreen() {
                   </Text>
                   <Text style={s.meta}>Loaded {formatDate(roll.loadedAt)}</Text>
                   {roll.locationLabel && <Text style={s.rollLocation}>📍 {roll.locationLabel}</Text>}
-                  {(roll.developer || roll.devTime || roll.pushPull) && (
-                    <Text style={s.meta}>
-                      {[
-                        roll.pushPull && `Push/Pull ${roll.pushPull}`,
-                        roll.developer,
-                        roll.dilution,
-                        roll.devTime && `${roll.devTime}${roll.devTemp ? " @ " + (displayStoredTemperature(roll.devTemp, temperatureUnit) ?? roll.devTemp) : ""}`,
-                        roll.fixer,
-                        roll.photoFlo === true ? "Photo-Flo" : null,
-                      ].filter(Boolean).join(" · ")}
-                    </Text>
-                  )}
                 </View>
                 <View style={s.cardRight}>
                   <Text style={s.shotCount}>{roll.shots.length}</Text>
@@ -1870,6 +1868,18 @@ export default function RollDetailScreen() {
                     <TouchableOpacity key={next} style={s.advanceBtn} onPress={() => advanceStatus(next)}>
                       <Text style={s.advanceText}>→ {statusActionLabel(roll.status, next)}</Text>
                     </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {devRows.length > 0 && (
+                <View style={s.devPanel}>
+                  <Text style={s.devTitle}>Development</Text>
+                  {devRows.map(([label, value]) => (
+                    <View key={label} style={s.devRow}>
+                      <Text style={s.devLabel}>{label}</Text>
+                      <Text style={s.devValue}>{value}</Text>
+                    </View>
                   ))}
                 </View>
               )}
@@ -2185,6 +2195,11 @@ const s = StyleSheet.create({
   backupBad: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New", lineHeight: 21 },
   backupLine: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", lineHeight: 21 },
   backupBtn: { marginTop: 10, fontSize: 14, color: COLORS.amberLight, fontFamily: "Courier New", letterSpacing: 0.5, textTransform: "uppercase" },
+  devPanel: { marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.borderSubtle, paddingTop: 10 },
+  devTitle: { fontSize: 10, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 },
+  devRow: { flexDirection: "row", justifyContent: "space-between", gap: 12, paddingVertical: 3 },
+  devLabel: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New" },
+  devValue: { flexShrink: 1, textAlign: "right", fontSize: 12, color: COLORS.textPrimary, fontFamily: "Courier New" },
   dropoffCard: { marginTop: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard, padding: 10 },
   dropoffTitle: { fontSize: 15, color: COLORS.textPrimary, fontFamily: "Courier New" },
   dropoffLine: { fontSize: 14, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 3 },

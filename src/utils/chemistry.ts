@@ -93,3 +93,29 @@ export function rollIdsForSet(batches: DevBatch[], setId: string): string[] {
     .flatMap((b) => b.rollIds);
   return Array.from(new Set(ids));
 }
+
+/**
+ * For rolls developed in a batch that are missing development details (e.g. batches
+ * finished before the batch wrote them), fills only the empty fields from the batch.
+ * Never overwrites what's there. Returns the same array if nothing changed.
+ */
+export function fillMissingFromBatches(rolls: Roll[], batches: DevBatch[], sets: ChemicalSet[], now: string): Roll[] {
+  let changed = false;
+  const out = rolls.map((r) => {
+    const batch = batchForRoll(batches, r.id);
+    if (!batch) return r;
+    const set = sets.find((c) => c.id === batch.chemicalSetId);
+    const fill: Partial<Roll> = {};
+    if (!r.developedAt) fill.developedAt = batch.developedAt;
+    if (!r.developer && set) fill.developer = set.chemistryName;
+    if (!r.dilution && set?.dilution) fill.dilution = set.dilution;
+    if (!r.devTime && batch.timeSeconds > 0) fill.devTime = formatDuration(batch.timeSeconds);
+    if (!r.devTemp && Number.isFinite(batch.tempC)) fill.devTemp = `${batch.tempC}°C`;
+    if (!r.fixer && batch.fixer) fill.fixer = batch.fixer;
+    if (r.photoFlo == null && batch.wettingAgent != null) fill.photoFlo = batch.wettingAgent;
+    if (Object.keys(fill).length === 0) return r;
+    changed = true;
+    return { ...r, ...fill, updatedAt: now };
+  });
+  return changed ? out : rolls;
+}

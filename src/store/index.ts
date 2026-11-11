@@ -4,7 +4,7 @@ import { AppState } from "react-native";
 import { supabase, deleteScan } from "@/services/supabase";
 import { fetchRollSnapshot, runSyncOp, SyncSetupError } from "@/services/rollSyncApi";
 import { Roll, Camera, FilmStock, User, Shot, LocationJournal, Walk, WalkStop, WalkCompletion, WalkReview, UserProfile, FilmPurchase, LabDropoff, ChemicalSet, DevBatch } from "@/types";
-import { applyBatchToRolls } from "@/utils/chemistry";
+import { applyBatchToRolls, fillMissingFromBatches } from "@/utils/chemistry";
 import { DEFAULT_CAMERAS, DEFAULT_FILM_STOCKS, normalizeStatus } from "@/constants";
 import { computeBadgeStats, computeBadgeNotifications, AppNotification } from "@/utils/badges";
 import { uid } from "@/utils";
@@ -425,6 +425,8 @@ interface FilmLogState {
   deleteChemSet: (id: string) => void;
   /** `stopsByRoll` is each roll's push (+) or pull (−) from the batch plan. */
   finishBatch: (batch: DevBatch, stopsByRoll?: Record<string, number>) => void;
+  /** Fills empty development details on rolls from the batch they were developed in. */
+  backfillBatchDetails: () => void;
   addShot: (rollId: string, shot: Shot) => void;
   createScanImportFrames: (rollId: string, frames: number[]) => Promise<void>;
   updateShot: (rollId: string, shot: Shot) => void;
@@ -631,6 +633,15 @@ export const useFilmLogStore = create<FilmLogState>((set, get) => ({
   },
 
   // Saves the batch, moves its rolls to In Scanning with the development details, and counts the rolls against the set.
+  backfillBatchDetails: () => {
+    const { rolls, batches, chemSets } = get();
+    const next = fillMissingFromBatches(rolls, batches, chemSets, new Date().toISOString());
+    if (next === rolls) return;
+    set({ rolls: next });
+    void get().persist();
+    get().scheduleRollSync();
+  },
+
   finishBatch: (batch, stopsByRoll = {}) => {
     const state = get();
     const chemSet = state.chemSets.find((c) => c.id === batch.chemicalSetId);
@@ -1235,6 +1246,8 @@ export const useFilmLogStore = create<FilmLogState>((set, get) => ({
           if (!stale && !syncAgain) break;
         }
         set({ rollSync: { state: "idle", lastSyncedAt: new Date().toISOString() } });
+        // Rolls pulled from the cloud may come from batches that predate copying details.
+        get().backfillBatchDetails();
       } catch (e) {
         console.warn("Roll sync failed:", e);
         set((st) => ({
@@ -1463,6 +1476,7 @@ export const useFilmLogStore = create<FilmLogState>((set, get) => ({
         rollSyncOwner: syncSaved?.owner ?? null,
         hydrated: true,
       });
+      get().backfillBatchDetails();
     } catch (e) {
       console.error("Hydration failed:", e);
       set({ hydrated: true });
