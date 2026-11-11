@@ -221,14 +221,14 @@ export default function GearScreen() {
 
       {/* ── Modals ── */}
       <CameraModal
-        key={cameraModal.open ? cameraModal.target?.id ?? "new" : "closed"}
+        key={`camera-${cameraModal.open ? cameraModal.target?.id ?? "new" : "closed"}`}
         visible={cameraModal.open}
         initial={cameraModal.target}
         onSave={(c) => cameraModal.target ? updateCamera(c) : addCamera(c)}
         onClose={() => setCameraModal({ open: false })}
       />
       <FilmModal
-        key={filmModal.open ? filmModal.target?.id ?? "new" : "closed"}
+        key={`film-${filmModal.open ? filmModal.target?.id ?? "new" : "closed"}`}
         visible={filmModal.open}
         initial={filmModal.target}
         onSave={(f) => filmModal.target ? updateFilmStock(f) : addFilmStock(f)}
