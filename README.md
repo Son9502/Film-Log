@@ -77,6 +77,8 @@ EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
+Optionally add `EXPO_PUBLIC_WEB_URL=https://<your live site>`. Passwords are always reset on the web, so a reset email requested from the phone opens this address (without it, Supabase uses its Site URL).
+
 `.env` is gitignored. Only use the **publishable / anon** key here: `EXPO_PUBLIC_*` values are bundled into the client, and Row Level Security is what protects the data. Never use the `service_role` key.
 
 ### 3. Run

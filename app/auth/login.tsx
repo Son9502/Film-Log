@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from "react-native";
 import { useRouter } from "expo-router";
-import * as Linking from "expo-linking";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { signIn, signOut, resetPassword } from "@/services/supabase";
 import { useFilmLogStore } from "@/store";
@@ -10,11 +9,19 @@ import AuthScreen from "@/components/AuthScreen";
 import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked, unsyncedRollChanges } from "@/utils/accountSyncSafety";
 import { exportCurrentLocalSnapshot } from "@/utils/snapshotExport";
 
-function resetRedirectUrl() {
+/**
+ * Where the reset email's link goes. The password is always reset on the web:
+ * the phone app can't read the link's token, and in Expo Go the link would be an
+ * exp:// address that a computer can't open. On a phone this uses
+ * EXPO_PUBLIC_WEB_URL (the live site); without it, Supabase falls back to the
+ * Site URL set under Authentication → URL Configuration.
+ */
+function resetRedirectUrl(): string | undefined {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return `${window.location.origin}/auth/reset-password`;
   }
-  return Linking.createURL("/auth/reset-password");
+  const web = process.env.EXPO_PUBLIC_WEB_URL?.trim().replace(/\/+$/, "");
+  return web ? `${web}/auth/reset-password` : undefined;
 }
 
 export default function LoginScreen() {
