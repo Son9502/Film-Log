@@ -8,6 +8,9 @@ import { useFilmLogStore } from "@/store";
 import { COLORS, FRAME_COUNT_OPTIONS } from "@/constants";
 import { uid, todayISO, rollsRemaining, hasDuplicateRollName } from "@/utils";
 import ShotIsoField from "@/components/ShotIsoField";
+import ExpiredFilmField from "@/components/ExpiredFilmField";
+import { stockProcess } from "@/utils/filmMatch";
+import { isValidExpiry } from "@/utils/expiredFilm";
 import Dropdown from "@/components/Dropdown";
 import { backOrReplace } from "@/utils/navigation";
 
@@ -81,6 +84,11 @@ export default function NewRollScreen() {
   const [filmStockId, setFilmStockId] = useState(purchase?.filmStockId ?? filmStocks[0]?.id ?? "");
   const stockName = (id: string) => filmStocks.find((f) => f.id === id)?.name ?? "Unknown film";
   const [shotIso, setShotIso] = useState(""); // empty = box speed
+  const [manualExpiry, setManualExpiry] = useState(""); // for film not from the inventory
+  const [compStops, setCompStops] = useState(0); // extra exposure for the film's age
+  const expiresAt = purchase ? purchase.expiresAt ?? "" : manualExpiry;
+  /** A different film: start again at box speed with no age compensation. */
+  const resetRating = () => { setShotIso(""); setCompStops(0); };
   const [frameCount, setFrameCount] = useState(36);
   const [customFrames, setCustomFrames] = useState("");
   const [useCustomFrames, setUseCustomFrames] = useState(false);
@@ -95,6 +103,7 @@ export default function NewRollScreen() {
 
   function handleSubmit() {
     if (resolvedFrameCount <= 0) return;
+    if (!purchase && manualExpiry.trim() && !isValidExpiry(manualExpiry)) return;
     const roll = {
       id: uid(),
       name: name.trim() || undefined,
@@ -102,6 +111,8 @@ export default function NewRollScreen() {
       filmStockId,
       iso: (parseInt(shotIso, 10) > 0 ? shotIso : selectedFilm?.iso.toString()) ?? "400",
       notes: notes.trim() || undefined,
+      expiresAt: expiresAt.trim() || undefined,
+      expiryCompStops: compStops || undefined,
       frameCount: resolvedFrameCount,
       status: "Shooting" as const,
       shots: [],
@@ -147,10 +158,10 @@ export default function NewRollScreen() {
             onSelect={(i) => {
               setSelectedPurchaseId(i.id);
               const p = available.find((x) => x.id === i.id);
-              if (p) { setFilmStockId(p.filmStockId); setShotIso(""); }
+              if (p) { setFilmStockId(p.filmStockId); resetRating(); }
             }}
           />
-          <TouchableOpacity onPress={() => setSkipInventory(true)}>
+          <TouchableOpacity onPress={() => { setSkipInventory(true); resetRating(); }}>
             <Text style={[s.skipText, { marginTop: 8 }]}>Not from inventory</Text>
           </TouchableOpacity>
         </>
@@ -189,11 +200,22 @@ export default function NewRollScreen() {
         <Dropdown
           items={filmStocks.map((f) => ({ id: f.id, label: f.name, sub: `ISO ${f.iso}` }))}
           selectedId={filmStockId}
-          onSelect={(i) => { setFilmStockId(i.id); setShotIso(""); }}
+          onSelect={(i) => { setFilmStockId(i.id); resetRating(); }}
           placeholder="Select film stock"
         />
       )}
-      <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={s.label} />
+      <ExpiredFilmField
+        boxIso={selectedFilm?.iso}
+        process={stockProcess(selectedFilm)}
+        expiresAt={expiresAt}
+        onExpiresAtChange={purchase ? undefined : setManualExpiry}
+        compStops={compStops}
+        onCompChange={setCompStops}
+        shotIso={shotIso}
+        onShotIsoChange={setShotIso}
+        labelStyle={s.label}
+      />
+      <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={s.label} ageCompStops={compStops} />
 
       {/* Frame Count */}
       <Text style={s.label}>Frame Count</Text>

@@ -1,6 +1,6 @@
 import { BW_RECIPES, BW_TEMP_CHART, COLOR_KITS, PUSH_CURVES, bwPushCurve } from "@/constants/devData";
 import type { ChemicalSet, DevProcess, FilmStock, Roll } from "@/types";
-import { calculateDevTime, calculateKitTime, formatDuration } from "./devCalc";
+import { calculateDevTime, calculateKitTime, developmentStops, formatDuration, stopsText } from "./devCalc";
 import { chemSetStatus } from "./chemistry";
 import { FilmMatch, matchFilm, stockProcess } from "./filmMatch";
 
@@ -48,6 +48,12 @@ function planRoll(
   const base: RollPlan = { rollId: roll.id, label, match, process, shotIso, stops: 0, seconds: null, tempC: null, notes: [] };
   if (!match) return base;
 
+  // Extra exposure for the film's age isn't a pull: develop as if rated that much faster.
+  const comp = roll.expiryCompStops ?? 0;
+  const devIso = (boxIso: number) =>
+    comp && boxIso > 0 && shotIso > 0 ? boxIso * 2 ** developmentStops(boxIso, shotIso, comp) : shotIso;
+  if (comp) base.notes = [`Rated ${stopsText(comp)} for age; developed from box speed.`];
+
   if (set.process === "B&W") {
     const dilution = set.dilution ?? "";
     const recipe = BW_RECIPES.find(
@@ -61,20 +67,20 @@ function planRoll(
     const curve = bwPushCurve(set.chemistryId, match.calcId);
     const r = calculateDevTime({
       recipes: BW_RECIPES, filmStockId: match.calcId, developerId: set.chemistryId, dilution,
-      shotIso, tempC, pushCurve: curve.curve, tempChart: BW_TEMP_CHART,
+      shotIso: devIso(recipe.exposureIso || match.boxIso), tempC, pushCurve: curve.curve, tempChart: BW_TEMP_CHART,
     });
     if (!r) return base;
-    return { ...base, seconds: r.timeSeconds, tempC, stops: r.stops, notes: r.notes };
+    return { ...base, seconds: r.timeSeconds, tempC, stops: r.stops, notes: [...base.notes, ...r.notes] };
   }
 
   const kit = COLOR_KITS.find((k) => k.id === set.chemistryId);
   if (!kit) return base;
   const r = calculateKitTime({
-    kit, shotIso, boxIso: match.boxIso, pushCurve: PUSH_CURVES[CURVE_KEY[set.process]], rollsDeveloped: set.rollsUsed,
+    kit, shotIso: devIso(match.boxIso), boxIso: match.boxIso, pushCurve: PUSH_CURVES[CURVE_KEY[set.process]], rollsDeveloped: set.rollsUsed,
   });
   if (!r) return base;
   const dev = kit.steps.find((s) => s.isDevelop);
-  return { ...base, seconds: r.developSeconds, tempC: dev?.tempC ?? null, stops: r.stops, notes: r.notes };
+  return { ...base, seconds: r.developSeconds, tempC: dev?.tempC ?? null, stops: r.stops, notes: [...base.notes, ...r.notes] };
 }
 
 export function planBatch(input: {

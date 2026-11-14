@@ -28,7 +28,7 @@ _Last reviewed: 2026-11-10._
 | Search and filters | ✅ Built (Rolls tab) |
 | Data export | ✅ CSV of rolls and frames; ZIP of scans with JPEG EXIF metadata |
 | Units setting | ✅ °C/°F and km/mi preferences; values stored in metric |
-| Expired-film flag | ✅ Built (Film Stash tab) |
+| Expired-film flag | ✅ Built (Film Stash tab); loading expired film suggests extra exposure, and batches develop it from box speed (`supabase/20`) |
 | Mobile build tested on a phone | 🟡 Runs in Expo Go; flows to re-test now that sync is back (§4) |
 | Database security fixes | 🟡 Script written (`supabase/06_security_hardening.sql`); run it in Supabase and re-test walks and profiles |
 | Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); run the scripts to turn it on |
@@ -97,7 +97,7 @@ Unshot film no longer counts as a roll. It lives in the inventory (§3.4), and l
 ### 3.4 Inventory and insights
 
 - **Film inventory:** purchases with stock, quantity, price, purchase date and expiry date. "Load a roll" takes one from the inventory and creates a roll in Shooting.
-- **Expired-film flag:** the inventory warns when a stock is past its expiry date, and loading expired film shows a reminder that expired film usually needs extra exposure.
+- **Expired-film flag:** the inventory warns when a stock is past its expiry date, and loading expired film suggests extra exposure for its age (about +1 stop per decade past expiry, less for cold storage and slide film, more for fast film). The roll keeps the expiry date and the compensation; the batch plan adds the compensation back so the roll is developed as box speed, not pulled.
 - **Stats card:** rolls this month, most-shot stocks, and spending (film purchases plus lab costs).
 
 ### 3.5 Usability

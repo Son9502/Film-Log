@@ -18,7 +18,9 @@ import { uploadScan, getScanUrl, deleteScan, verifyScans } from "@/services/supa
 import { displayStoredTemperature, storedTemperature } from "@/utils/units";
 import { backOrReplace } from "@/utils/navigation";
 import ShotIsoField from "@/components/ShotIsoField";
-import { stopsFromBox } from "@/utils/devCalc";
+import ExpiredFilmField from "@/components/ExpiredFilmField";
+import { formatExpiry, isValidExpiry, ratingSummary } from "@/utils/expiredFilm";
+import { stockProcess } from "@/utils/filmMatch";
 import { filmStripScanLayout, fitScanPreview } from "@/utils/scanLayout";
 import { readScanImageSize } from "@/utils/scanImageSize";
 
@@ -987,6 +989,8 @@ function EditRollModal({
     const box = filmStocks.find((f) => f.id === roll?.filmStockId)?.iso;
     return roll?.iso && roll.iso !== String(box) ? roll.iso : "";
   });
+  const [expiresAt, setExpiresAt] = useState(roll?.expiresAt ?? "");
+  const [compStops, setCompStops] = useState(roll?.expiryCompStops ?? 0);
   const isPreset = FRAME_COUNT_OPTIONS.includes(roll?.frameCount ?? 36);
   const [frameCount, setFrameCount] = useState(isPreset ? (roll?.frameCount ?? 36) : 36);
   const [useCustomFrames, setUseCustomFrames] = useState(!isPreset);
@@ -1048,6 +1052,7 @@ function EditRollModal({
   function handleSave() {
     if (frameError) return;
     if (useCustomFrames && resolvedFrameCount <= 0) return;
+    if (expiresAt.trim() && !isValidExpiry(expiresAt)) return;
     const selectedFilm = filmStocks.find((f) => f.id === filmStockId);
     const base = roll!;
     updateRoll({
@@ -1060,6 +1065,8 @@ function EditRollModal({
       filmStockId,
       iso: parseInt(shotIso, 10) > 0 ? shotIso : selectedFilm?.iso.toString() ?? base.iso,
       frameCount: resolvedFrameCount,
+      expiresAt: expiresAt.trim() || undefined,
+      expiryCompStops: compStops || undefined,
       developer: developer.trim() || undefined,
       dilution: dilution.trim() || undefined,
       devTime: devTime.trim() || undefined,
@@ -1102,7 +1109,18 @@ function EditRollModal({
             <Text style={m.pickerText}>{selectedFilm?.name ?? "Select"}</Text>
             <Text style={m.pickerArrow}>›</Text>
           </TouchableOpacity>
-          <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={m.label} />
+          <ExpiredFilmField
+            boxIso={selectedFilm?.iso}
+            process={stockProcess(selectedFilm)}
+            expiresAt={expiresAt}
+            onExpiresAtChange={setExpiresAt}
+            compStops={compStops}
+            onCompChange={setCompStops}
+            shotIso={shotIso}
+            onShotIsoChange={setShotIso}
+            labelStyle={m.label}
+          />
+          <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={m.label} ageCompStops={compStops} />
 
           <Text style={m.label}>Frame Count</Text>
           <View style={m.segmented}>
@@ -1833,10 +1851,11 @@ export default function RollDetailScreen() {
                   {!!roll.name?.trim() && <Text style={s.filmName}>{film?.name ?? roll.filmStockId}</Text>}
                   <Text style={s.meta}>
                     {camera?.name ?? roll.cameraId} · ISO {roll.iso}
-                    {film && parseInt(roll.iso, 10) > 0 && parseInt(roll.iso, 10) !== film.iso
-                      ? ` · rated from ${film.iso} (${stopsFromBox(film.iso, parseInt(roll.iso, 10)) > 0 ? "push" : "pull"})`
-                      : ""}
+                    {ratingSummary(roll, film?.iso)}
                   </Text>
+                  {roll.expiresAt && (
+                    <Text style={s.meta}>Film {roll.expiresAt < roll.loadedAt ? "expired" : "expires"} {formatExpiry(roll.expiresAt)}</Text>
+                  )}
                   <Text style={s.meta}>Loaded {formatDate(roll.loadedAt)}</Text>
                   {roll.locationLabel && <Text style={s.rollLocation}>📍 {roll.locationLabel}</Text>}
                 </View>

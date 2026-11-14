@@ -27,6 +27,8 @@ export function rollToDb(roll: Roll, userId: string) {
     push_pull: roll.pushPull ?? null,
     fixer: roll.fixer ?? null,
     photo_flo: roll.photoFlo ?? null,
+    expires_at: roll.expiresAt ?? null,
+    expiry_comp_stops: roll.expiryCompStops || null, // 0 and unset are the same
     is_public: roll.isPublic ?? false,
     created_at: roll.createdAt,
     updated_at: roll.updatedAt,
@@ -60,6 +62,10 @@ export function dbToRoll(row: any): Roll {
     pushPull: row.push_pull ?? undefined,
     fixer: row.fixer ?? undefined,
     photoFlo: row.photo_flo ?? undefined,
+    expiresAt: row.expires_at ?? undefined,
+    // PostgREST may return numeric as a string.
+    expiryCompStops: row.expiry_comp_stops != null && Number(row.expiry_comp_stops) !== 0
+      ? Number(row.expiry_comp_stops) : undefined,
     isPublic: row.is_public ?? false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

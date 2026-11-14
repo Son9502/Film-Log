@@ -22,7 +22,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 - **GPS & location** — auto-captures GPS coordinates when logging a frame (if permitted); manual text location with geocoding (address → lat/lng); Shot Map (a Map view on the Journal tab) pins all frames on a map
 - **Location journals** — every unique location label becomes a journal entry: write notes about the place, browse all frames shot there in a chronological timeline; serves as a living trip report
 - **Gear management** — manage cameras and film stocks; 17 stocks and 3 cameras included by default, add your own
-- **Film inventory** — log film purchases (stock, quantity, price, expiry), see what is expired, and load a roll straight from the inventory
+- **Film inventory** — log film purchases (stock, quantity, price, expiry), see what is expired, and load a roll straight from the inventory. Loading expired film suggests extra exposure (about +1 stop per decade, adjusted for storage, speed and slide film), and development treats that as box speed rather than a pull
 - **Lab drop-offs** — drop several rolls at a lab at once, choosing per roll whether the lab develops, scans or both; record cost and pick-up
 - **Development calculator** — times for B&W (38 developer/film recipes), C-41, E-6 and ECN-2, with push/pull, temperature compensation and a step-by-step process list; save the result to a roll
 - **Chemical sets & batches** — on the Develop tab, track shelf life and capacity of mixed chemistry and develop a batch of rolls at once; the app suggests the time per roll and blocks mixes that can't share a tank (remjet with non-remjet, different processes, different push/pull)
@@ -113,6 +113,7 @@ Run everything below in Supabase Dashboard → SQL Editor, **in this order**:
 16. [`supabase/17_batch_details.sql`](supabase/17_batch_details.sql): fixer, wetting agent and solution volume on batches; minimum concentrate on chemical sets
 17. [`supabase/18_frame_realtime.sql`](supabase/18_frame_realtime.sql): live frame updates across devices
 18. [`supabase/19_film_stock_process.sql`](supabase/19_film_stock_process.sql): development process (B&W, C-41, E-6, ECN-2) on custom film stocks
+19. [`supabase/20_roll_expiry.sql`](supabase/20_roll_expiry.sql): film expiry date and extra exposure for age on rolls (rolls with these details stay on the device until it runs)
 
 On a fresh project, skip the *Phase 8* walk block in **Migrations** and the walk policies in **RLS**: `01_walks.sql` replaces them with stricter policies. See [ARCHITECTURE.md §8](ARCHITECTURE.md#8-security-model--known-limitations).
 

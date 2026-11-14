@@ -6,7 +6,7 @@ import { COLORS } from "@/constants";
 import { uid, todayISO } from "@/utils";
 import { chemSetWarning, formatStops, parseDuration } from "@/utils/chemistry";
 import { DEFAULT_ML_PER_ROLL, minimumWarning, mixFor } from "@/utils/mix";
-import { formatDuration } from "@/utils/devCalc";
+import { formatDuration, stopsText } from "@/utils/devCalc";
 import { planBatch } from "@/utils/batchPlan";
 import { stockProcess } from "@/utils/filmMatch";
 import type { DevProcess, Roll } from "@/types";
@@ -117,7 +117,7 @@ export default function NewBatchScreen() {
         <View style={{ flex: 1 }}>
           <Text style={s.rollName}>{r.name || stockName(r.filmStockId)}</Text>
           <Text style={s.rollSub}>
-            {stockName(r.filmStockId)} · ISO {r.iso} · {r.shots.length} frames{unknown ? " · process?" : ""}{timing}
+            {stockName(r.filmStockId)} · ISO {r.iso}{r.expiryCompStops ? ` (${stopsText(r.expiryCompStops)} for age)` : ""} · {r.shots.length} frames{unknown ? " · process?" : ""}{timing}
           </Text>
           {needsManual ? (
             <View style={s.stepRow}>

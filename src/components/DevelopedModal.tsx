@@ -5,7 +5,7 @@ import {
 import { COLORS } from "@/constants";
 import { todayISO } from "@/utils";
 import { formatStops, parseDuration } from "@/utils/chemistry";
-import { stopsFromBox } from "@/utils/devCalc";
+import { developmentStops } from "@/utils/devCalc";
 import { displayStoredTemperature, storedTemperature, TemperatureUnit } from "@/utils/units";
 import type { Roll } from "@/types";
 
@@ -43,7 +43,7 @@ export default function DevelopedModal({
   const shotIso = parseInt(roll.iso, 10);
   // Nearest third of a stop, written as a number the push/pull box accepts (e.g. +2, +1.3).
   const suggestedPush = boxIso && shotIso > 0
-    ? formatStops(Math.round((Math.round(stopsFromBox(boxIso, shotIso) * 3) / 3) * 10) / 10)
+    ? formatStops(Math.round((Math.round(developmentStops(boxIso, shotIso, roll.expiryCompStops) * 3) / 3) * 10) / 10)
     : undefined;
 
   useEffect(() => {

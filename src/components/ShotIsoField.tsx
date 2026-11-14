@@ -7,13 +7,15 @@ import { pushLabel } from "@/utils/devCalc";
  * need pushing in development, below means pulling. The batch screen reads this later.
  */
 export default function ShotIsoField({
-  boxIso, value, onChange, labelStyle,
+  boxIso, value, onChange, labelStyle, ageCompStops = 0,
 }: {
   boxIso: number | undefined;
   /** What the user typed; empty means box speed. */
   value: string;
   onChange: (v: string) => void;
   labelStyle?: object;
+  /** Extra exposure for expired film, already in the rating; not a pull. */
+  ageCompStops?: number;
 }) {
   const shot = parseInt(value, 10);
   const effective = Number.isFinite(shot) && shot > 0 ? shot : boxIso;
@@ -39,7 +41,7 @@ export default function ShotIsoField({
           ))}
         </View>
       )}
-      {boxIso && effective ? <Text style={s.hint}>{pushLabel(boxIso, effective)}</Text> : null}
+      {boxIso && effective ? <Text style={s.hint}>{pushLabel(boxIso, effective, ageCompStops)}</Text> : null}
     </View>
   );
 }

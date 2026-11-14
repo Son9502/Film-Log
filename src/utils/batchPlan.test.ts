@@ -1,4 +1,5 @@
 import { planBatch } from "./batchPlan";
+import { COLOR_KITS } from "@/constants/devData";
 import { matchFilm, stockProcess } from "./filmMatch";
 import { ChemicalSet, FilmStock, Roll } from "@/types";
 import { DEFAULT_FILM_STOCKS } from "@/constants";
@@ -78,5 +79,46 @@ describe("planBatch", () => {
     const p = planBatch({ rolls: [roll("a", "mystery", "400"), roll("b", "mystery", "400")], stocks, set, today });
     expect(p.warnings.join(" ")).toMatch(/capacity/);
     expect(p.warnings.join(" ")).toMatch(/No reference data/);
+  });
+});
+
+describe("planBatch with expired film", () => {
+  const today = "2026-11-04";
+  const kit = COLOR_KITS.find((k) => k.process === "C-41")!;
+  const c41Set: ChemicalSet = {
+    ...bwSet(), process: "C-41", chemistryId: kit.id, chemistryName: kit.name, dilution: undefined,
+  };
+  const aged = (iso: string, comp: number): Roll => ({ ...roll("old", "portra-400", iso), expiryCompStops: comp });
+
+  it("develops film rated slower for its age at box speed, not as a pull", () => {
+    const fresh = planBatch({ rolls: [roll("a", "portra-400", "400")], stocks, set: c41Set, today });
+    const old = planBatch({ rolls: [aged("200", 1)], stocks, set: c41Set, today });
+    expect(old.rolls[0].stops).toBe(0);
+    expect(old.rolls[0].seconds).toBe(fresh.rolls[0].seconds);
+    expect(old.rolls[0].notes.join(" ")).toMatch(/for age/);
+  });
+
+  it("without the age note, the same rating is a pull", () => {
+    const pulled = planBatch({ rolls: [roll("a", "portra-400", "200")], stocks, set: c41Set, today });
+    expect(pulled.rolls[0].stops).toBe(-1);
+  });
+
+  it("keeps an intended push on top of the age compensation", () => {
+    const fresh = planBatch({ rolls: [roll("a", "portra-400", "800")], stocks, set: c41Set, today });
+    const old = planBatch({ rolls: [aged("400", 1)], stocks, set: c41Set, today });
+    expect(old.rolls[0].stops).toBe(1);
+    expect(old.rolls[0].seconds).toBe(fresh.rolls[0].seconds);
+  });
+
+  it("snaps thirds rounded onto the ISO scale (Portra 400 at 250 with +⅔)", () => {
+    const old = planBatch({ rolls: [aged("250", 0.67)], stocks, set: c41Set, today });
+    expect(old.rolls[0].stops).toBe(0);
+  });
+
+  it("applies to B&W too", () => {
+    const fresh = planBatch({ rolls: [roll("a", "hp5-plus", "400")], stocks, set: bwSet(), today });
+    const old = planBatch({ rolls: [{ ...roll("b", "hp5-plus", "200"), expiryCompStops: 1 }], stocks, set: bwSet(), today });
+    expect(old.rolls[0].stops).toBe(0);
+    expect(old.rolls[0].seconds).toBe(fresh.rolls[0].seconds);
   });
 });

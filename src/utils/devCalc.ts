@@ -202,13 +202,33 @@ export function formatThirds(stops: number): string {
   return `${whole > 0 || !frac ? whole : ""}${frac}`;
 }
 
-/** "Box speed", or "+2 stops: push in development" for a roll rated away from box speed. */
-export function pushLabel(boxIso: number, shotIso: number): string {
+/** Signed stops in thirds with a unit, e.g. "+1 stop", "+⅔ stop", "−1⅓ stops". */
+export function stopsText(stops: number): string {
+  const thirds = Math.round(Math.abs(stops) * 3);
+  return `${stops < 0 ? "−" : "+"}${formatThirds(stops)} ${thirds <= 3 ? "stop" : "stops"}`;
+}
+
+/**
+ * Stops to push (+) or pull (−) in development. Extra exposure given for the film's
+ * age (`ageCompStops`) is not a pull: expired film rated slower is developed as if
+ * shot at box speed, so the compensation is added back. With compensation the
+ * result is snapped to the nearest third, since rated ISOs are rounded to the
+ * standard scale.
+ */
+export function developmentStops(boxIso: number, shotIso: number, ageCompStops = 0): number {
   const stops = stopsFromBox(boxIso, shotIso);
-  if (Math.round(Math.abs(stops) * 3) === 0) return "Box speed: develop normally.";
+  if (!ageCompStops) return stops;
+  return Math.round((stops + ageCompStops) * 3) / 3 || 0; // no −0
+}
+
+/** "Box speed", or "+2 stops: push in development" for a roll rated away from box speed. */
+export function pushLabel(boxIso: number, shotIso: number, ageCompStops = 0): string {
+  const stops = developmentStops(boxIso, shotIso, ageCompStops);
+  const age = ageCompStops ? `Rated ${stopsText(ageCompStops)} for age. ` : "";
+  if (Math.round(Math.abs(stops) * 3) === 0) return age ? `${age}Develop as box speed.` : "Box speed: develop normally.";
   const n = formatThirds(stops);
   const unit = Math.round(Math.abs(stops) * 3) <= 3 ? "stop" : "stops";
   return stops > 0
-    ? `+${n} ${unit}: push this roll in development.`
-    : `−${n} ${unit}: pull this roll in development.`;
+    ? `${age}+${n} ${unit}: push this roll in development.`
+    : `${age}−${n} ${unit}: pull this roll in development.`;
 }

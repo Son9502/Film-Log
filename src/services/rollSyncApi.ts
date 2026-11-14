@@ -2,11 +2,12 @@
 import { supabase } from "./supabase";
 import { dbToRoll, dbToShot, rollSyncFields, shotSyncFields } from "@/utils/rollRows";
 import type { RemoteSnapshot, SyncOp } from "@/utils/rollMerge";
+import type { SyncFields } from "@/utils/rollRows";
 
 /** The database doesn't have the sync scripts (supabase/13–15) yet. */
 export class SyncSetupError extends Error {
-  constructor(detail: string) {
-    super(`Cloud sync isn't set up yet: run supabase/13, 14 and 15 in the Supabase SQL Editor. (${detail})`);
+  constructor(detail: string, scripts = "supabase/13, 14 and 15") {
+    super(`Cloud sync isn't set up yet: run ${scripts} in the Supabase SQL Editor. (${detail})`);
     this.name = "SyncSetupError";
   }
 }
@@ -58,11 +59,41 @@ export type OpResult =
   | { status: "deleted" }
   | { status: "conflict" };
 
+/** Roll fields added by supabase/20; older databases reject them. */
+const EXPIRY_FIELDS = ["expires_at", "expiry_comp_stops"] as const;
+let expiryColumnsMissing = false;
+
+const withoutExpiry = (fields: SyncFields): SyncFields => {
+  const rest = { ...fields };
+  for (const k of EXPIRY_FIELDS) delete rest[k];
+  return rest;
+};
+
+/**
+ * Before supabase/20 runs, guarded_roll_write rejects the expiry fields. Rolls without
+ * expiry details are saved without them; a roll with them stays on the device.
+ */
+async function writeRoll(op: Extract<SyncOp, { type: "write-roll" }>) {
+  const hasExpiry = EXPIRY_FIELDS.some((k) => op.fields[k] != null);
+  const call = (fields: SyncFields) =>
+    supabase.rpc("guarded_roll_write", { p_id: op.id, p_expected_revision: op.expected, p_fields: fields });
+  if (expiryColumnsMissing && !hasExpiry) return call(withoutExpiry(op.fields));
+  const res = await call(op.fields);
+  if (res.error?.code === "22023" && /Invalid roll write arguments/.test(res.error.message)) {
+    if (hasExpiry) throw new SyncSetupError("a roll has film expiry details", "supabase/20_roll_expiry.sql");
+    const retry = await call(withoutExpiry(op.fields));
+    if (!retry.error) expiryColumnsMissing = true;
+    return retry;
+  }
+  if (!res.error && hasExpiry) expiryColumnsMissing = false;
+  return res;
+}
+
 export async function runSyncOp(op: SyncOp): Promise<OpResult> {
   let res;
   switch (op.type) {
     case "write-roll":
-      res = await supabase.rpc("guarded_roll_write", { p_id: op.id, p_expected_revision: op.expected, p_fields: op.fields });
+      res = await writeRoll(op);
       break;
     case "write-shot":
       res = await supabase.rpc("guarded_shot_write", { p_id: op.id, p_roll_id: op.rollId, p_expected_revision: op.expected, p_fields: op.fields });

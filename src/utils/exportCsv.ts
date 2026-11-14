@@ -15,12 +15,12 @@ export function rollsToCsv(rolls: Roll[], names: Names): string {
     [
       "roll_id", "name", "film", "camera", "iso", "frame_count", "frames_logged", "status",
       "loaded_at", "developed_at", "location", "developer", "dilution", "dev_time", "dev_temp",
-      "push_pull", "fixer", "notes",
+      "push_pull", "fixer", "film_expires", "expiry_comp_stops", "notes",
     ],
     rolls.map((r) => [
       r.id, r.name, names.film(r.filmStockId), names.camera(r.cameraId), r.iso, r.frameCount,
       r.shots.length, r.status, r.loadedAt, r.developedAt, r.locationLabel, r.developer, r.dilution,
-      r.devTime, r.devTemp, r.pushPull, r.fixer, r.notes,
+      r.devTime, r.devTemp, r.pushPull, r.fixer, r.expiresAt, r.expiryCompStops, r.notes,
     ])
   );
 }

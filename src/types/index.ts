@@ -135,6 +135,12 @@ export interface Roll {
   pushPull?: string;       // e.g. "+2", "-1" (stops from box speed)
   fixer?: string;          // e.g. "Kodak Rapid Fixer"
   photoFlo?: boolean;      // wetting agent used in final rinse
+  expiresAt?: string;      // film's expiry date, YYYY-MM-DD (copied from the inventory when loaded)
+  /**
+   * Extra exposure given for the film's age, in stops (thirds, e.g. 1.33). Already
+   * included in `iso`; development adds it back so expired film isn't pulled.
+   */
+  expiryCompStops?: number;
   isPublic?: boolean;   // whether others can view this roll's content on your profile
   createdAt: string;
   updatedAt: string;
