@@ -158,7 +158,8 @@ Apart from rolls and frames, there's no conflict resolution: remote rows overwri
 ### Scans (media)
 - Scans are uploaded to the private `scans` bucket at `{userId}/{rollId}/{shotId}.{ext}`. The storage path is saved in `shots.scan_uri`.
 - Scans are displayed through **signed URLs with a 1-hour expiry** (`getScanUrl`).
-- Bulk import uses a ZIP, unpacked with `fflate` on both platforms: synchronously on native (`roll/import.tsx`, which has no Web Workers) and asynchronously in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
+- Bulk import takes images or ZIPs. On a phone (`roll/import.tsx`) the user picks **Photos** (`expo-image-picker`, tap order kept) or **Files** (`expo-document-picker`, sorted by name), both at full quality (`src/utils/pickScans.ts`). ZIPs are unpacked with `fflate`: synchronously on native, which has no Web Workers, and asynchronously in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
+- Upload safeguards (`src/utils/scanUploadSafety.ts`): each file's first bytes must match a JPEG, PNG, TIFF or HEIC signature, which also sets the content type; scans over 50 MB and ZIPs over 500 MB are refused; each upload has a size-scaled timeout and one automatic retry on network errors; storage errors become readable messages, and failed files can be retried. Handled failures aren't logged as console errors.
 - Avatars go to the **public** `avatars` bucket at `{userId}/avatar.{ext}` and are served with public URLs.
 
 ### Location
@@ -243,7 +244,8 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 - **Conflict resolution covers rolls and frames only.** Other entities still use last-write-wins upserts and can overwrite each other's changes.
 - **Whole-store persistence.** Every action rewrites every AsyncStorage key, which is fine at current data sizes.
 - **Large screen files.** `app/roll/[id].tsx` is about 2,300 lines and a candidate for splitting into components.
-- **No automated tests** yet.
+- **Tests:** Jest unit tests cover `src/utils/` (`npm test`), and `supabase/tests/` holds SQL tests for the guarded write and delete functions. Screens aren't tested, and status-transition validation has no tests yet.
+- **Uploads stall if the phone locks mid-import**, and large TIFFs upload in one request with no byte-level progress; resumable uploads are a follow-up.
 
 ---
 

@@ -10,13 +10,13 @@ v1 changes direction from the earlier plan. Social features (walks, public profi
 
 ## 1. Status at a glance
 
-_Last reviewed: 2026-11-10._
+_Last reviewed: 2026-11-14._
 
 | Area | Status |
 |---|---|
 | Rolls and frames: film stock, camera, ISO shot at, dates | ✅ Built |
 | Notes per roll and per frame (settings, location, development fields) | ✅ Built |
-| Bulk scan import from a ZIP | ✅ Built (web); native import needs rework (see §4) |
+| Bulk scan import | ✅ Built: phone imports from Photos or Files (images or ZIPs), web from images or ZIPs; uploads are checked (file type, 50 MB per scan, 500 MB per ZIP), time out, retry once, and failed files can be retried |
 | Gallery by roll and shot locations | ✅ Built (on web, the shot map is a list grouped by roll) |
 | Scans uploaded to cloud storage | ✅ Built (Supabase `scans` bucket) |
 | New status flow with lab drop-offs | ✅ Built (`supabase/08_lab_dropoffs.sql`) |
@@ -29,11 +29,11 @@ _Last reviewed: 2026-11-10._
 | Data export | ✅ One spreadsheet (.xlsx): a Rolls sheet linking to a sheet per roll, plus All frames; ZIP of scans with JPEG EXIF metadata |
 | Units setting | ✅ °C/°F and km/mi preferences; values stored in metric |
 | Expired-film flag | ✅ Built (Film Stash tab); loading expired film suggests extra exposure, and batches develop it from box speed (`supabase/20`) |
-| Mobile build tested on a phone | 🟡 Runs in Expo Go; flows to re-test now that sync is back (§4) |
-| Database security fixes | 🟡 Script written (`supabase/06_security_hardening.sql`); run it in Supabase and re-test walks and profiles |
-| Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); run the scripts to turn it on |
-| Automated tests | ✅ Jest (`npm test`): calculator, chemistry, summary, filters, spreadsheet export |
-| Public deployment | ❌ Not deployed |
+| Mobile build tested on a phone | ✅ Tested in Expo Go: sign in, GPS roll, Photos/Files/ZIP import, retry after going offline, sync with the web |
+| Database security fixes | ✅ `supabase/06_security_hardening.sql` run; SQL tests in `supabase/tests/` pass |
+| Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); tested, the Sync panel settles with no differences |
+| Automated tests | ✅ Jest (`npm test`): calculator, chemistry, batches, expired film, summary, filters, spreadsheet export, upload checks, sync merge; SQL tests in `supabase/tests/` |
+| Public deployment | 🟡 Next step: host the web build (§5 and the README's Deployment section) |
 | Public GitHub repo | ✅ Created |
 
 ---
@@ -111,14 +111,14 @@ Unshot film no longer counts as a roll. It lives in the inventory (§3.4), and l
 
 ## 4. Mobile
 
-v1 must work on a phone, with changes syncing to the web. The code is shared, but the mobile build has never been run.
+v1 must work on a phone, with changes syncing to the web. The code is shared with the web, and the app has been tested on an iPhone in Expo Go.
 
 **Steps:**
 
 1. ✅ **Fix the dependency versions.** Every package now matches Expo SDK 58 (React 19, React Native 0.88, `expo-router` 58), and `npm install` works without `--legacy-peer-deps`.
 2. ✅ **Remove packages that block Expo Go.** Native ZIP import now uses `fflate` with the new `expo-file-system` API instead of `react-native-zip-archive`, and the unused `react-native-share` is gone.
-3. **Run it in Expo Go.** Install Expo Go on your phone, run `npm start` and scan the QR code, with the phone and computer on the same Wi-Fi. The iOS Simulator also works through Xcode (press `i`).
-4. **Walk through the flows on the phone:** sign in, log a roll with GPS, import a ZIP of scans, then check that everything appears on the web.
+3. ✅ **Run it in Expo Go.** Install Expo Go on your phone, run `npm start` and scan the QR code, with the phone and computer on the same Wi-Fi. The iOS Simulator also works through Xcode (press `i`).
+4. ✅ **Walk through the flows on the phone:** sign in, log a roll with GPS, import scans from Photos and from Files (images and ZIPs), then check that everything appears on the web.
 v1 runs on the phone through Expo Go only. A standalone install with its own icon (a development build, TestFlight or the App Store) comes after v1.
 
 ✅ `app.json` leftovers are fixed: a placeholder `assets/icon.png` (replace with real artwork) and the bundle ID is `com.sotieojo.filmlog`.
@@ -138,7 +138,7 @@ The walks and profiles code still ships in v1, so its known database security ga
 
 Every new table with user data (§6) gets row-level security limited to its owner.
 
-**Deployment:** export the web build (`npx expo export --platform web`), host it on Vercel, Netlify or Cloudflare Pages with the two `EXPO_PUBLIC_SUPABASE_*` values set, and add the live URL to Supabase's Authentication URL configuration so password-reset links work. Put the link and a few screenshots at the top of the README.
+**Deployment:** export the web build (`npx expo export --platform web`), host it on Vercel, Netlify or Cloudflare Pages with the two `EXPO_PUBLIC_SUPABASE_*` values set and a rewrite that sends every path to `index.html`, and add the live URL to Supabase's Authentication URL configuration so sign-up and password-reset links work. Put the link and a few screenshots at the top of the README. GitHub Pages would also need a base path (`/Film-Log/`) and a 404-page workaround, so it isn't recommended.
 
 ---
 
@@ -202,13 +202,14 @@ Rolls already store development details as free text (`developer`, `dilution`, `
 
 ## 7. Tests
 
-Add Jest (`jest-expo`) and cover the core logic:
+Jest (`jest-expo`, run with `npm test`) covers the core logic:
 
-- calculator math: base time, push and pull, temperature compensation, exhaustion;
-- mapping frame fields to EXIF metadata;
-- status changes: every path in §2, and rejecting invalid moves;
-- finishing a batch: roll statuses and the chemical set's count;
-- unit conversion.
+- ✅ calculator math: base time, push and pull, temperature compensation, exhaustion;
+- ✅ mapping frame fields to EXIF metadata;
+- ✅ finishing a batch: roll statuses and the chemical set's count;
+- ✅ unit conversion;
+- ✅ expired-film compensation, spreadsheet export, upload checks and sync merging;
+- ❌ status changes: every path in §2, and rejecting invalid moves.
 
 Keep this logic in plain functions under `src/utils/` so it can be tested without rendering screens.
 
@@ -240,5 +241,5 @@ Keep this logic in plain functions under `src/utils/` so it can be tested withou
 ## 10. Not in v1
 
 - **In-app development timer**, including background alerts.
-- **v2:** sharing scans by text, email, Instagram and other apps through the phone's share sheet; full achievements, community photo walks and other social features (the existing walks, profiles and badges stay as they are); AI scan analysis; a Go/AWS scan-processing service; smart buying recommendations beyond simple stats.
+- **v2:** sharing scans by text, email, Instagram and other apps through the phone's share sheet; full achievements, community photo walks and other social features (the existing walks, profiles and badges stay as they are, hidden); AI helpers (an advice-only film advisor, on-device voice logging that never stores recordings, and frame order from scan file names); a Go/AWS scan-processing service; smart buying recommendations beyond simple stats.
 - **Code health:** split `app/roll/[id].tsx` (about 2,300 lines) into components, and add timestamp-based conflict resolution to sync.
