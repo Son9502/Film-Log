@@ -68,7 +68,10 @@ export default function RootLayout() {
     }
     init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // A reset link can land on any page (Supabase falls back to the Site URL):
+      // send it to the screen that sets the new password.
+      if (event === "PASSWORD_RECOVERY") router.replace("/auth/reset-password");
       await hydration;
       if (!session?.user) {
         initHandledUserId = null;
@@ -113,9 +116,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (!ready) return;
     const inAuthGroup = segments[0] === "auth";
+    // The reset link signs the user in, but they still need to set the new password.
+    const settingNewPassword = inAuthGroup && (segments as string[])[1] === "reset-password";
     if (!user && !inAuthGroup) {
       router.replace("/auth/login");
-    } else if (user && inAuthGroup) {
+    } else if (user && inAuthGroup && !settingNewPassword) {
       router.replace("/(tabs)");
     }
   }, [user, ready, segments]);
