@@ -9,7 +9,7 @@ import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
 import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, NEXT_STATUSES, statusActionLabel } from "@/constants";
-import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName } from "@/utils";
+import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName, pickableCameras } from "@/utils";
 import { Shot, RollStatus } from "@/types";
 import LabDropoffModal, { DropoffInput } from "@/components/LabDropoffModal";
 import DevelopedModal, { DevelopedDetails } from "@/components/DevelopedModal";
@@ -1270,7 +1270,7 @@ function EditRollModal({
             <View style={m.overlay}>
               <View style={m.innerSheet}>
                 <Text style={m.title}>Camera</Text>
-                {cameras.map((c) => (
+                {pickableCameras(cameras, rolls, roll.cameraId).map((c) => (
                   <TouchableOpacity key={c.id} style={[m.option, cameraId === c.id && m.optionActive]}
                     onPress={() => { setCameraId(c.id); setCameraPickerOpen(false); }}>
                     <Text style={[m.optionText, cameraId === c.id && m.optionTextActive]}>{c.name}</Text>

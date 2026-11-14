@@ -1463,7 +1463,8 @@ export const useFilmLogStore = create<FilmLogState>((set, get) => ({
         dropoffs: dropoffsRaw ? JSON.parse(dropoffsRaw) : [],
         chemSets: chemSetsRaw ? JSON.parse(chemSetsRaw) : [],
         batches: batchesRaw ? JSON.parse(batchesRaw) : [],
-        cameras: camerasRaw ? JSON.parse(camerasRaw) : DEFAULT_CAMERAS,
+        // Built-ins always come from the code (so renames apply); stored copies are ignored.
+        cameras: [...DEFAULT_CAMERAS, ...(camerasRaw ? (JSON.parse(camerasRaw) as Camera[]).filter((c) => c.isCustom) : [])],
         filmStocks: stocksRaw ? withDefaultProcesses(JSON.parse(stocksRaw)) : DEFAULT_FILM_STOCKS,
         journals: journalsRaw ? JSON.parse(journalsRaw) : [],
         personalWalks: walksRaw ? JSON.parse(walksRaw) : [],

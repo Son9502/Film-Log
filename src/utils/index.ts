@@ -23,6 +23,15 @@ export function todayISO(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// ── Cameras ───────────────────────────────────────────────────────────────────
+/** Your own cameras, plus any built-in camera a roll already uses (`keepId` too, e.g. the roll being edited). */
+export function pickableCameras<C extends { id: string; isCustom: boolean }>(
+  cameras: C[], rolls: { cameraId: string }[], keepId?: string,
+): C[] {
+  const used = new Set(rolls.map((r) => r.cameraId));
+  return cameras.filter((c) => c.isCustom || used.has(c.id) || c.id === keepId);
+}
+
 // ── Film inventory ────────────────────────────────────────────────────────────
 export function isExpired(expiresAt?: string): boolean {
   return !!expiresAt && expiresAt < todayISO();

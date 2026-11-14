@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
-import { uid } from "@/utils";
+import { uid, pickableCameras } from "@/utils";
 import { Camera, DevProcess, FilmStock } from "@/types";
 import { DEV_PROCESSES, matchFilm } from "@/utils/filmMatch";
 
@@ -136,8 +136,10 @@ function FilmModal({
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function GearScreen() {
-  const { cameras, filmStocks, addCamera, updateCamera, deleteCamera, addFilmStock, updateFilmStock, deleteFilmStock } =
+  const { rolls, cameras, filmStocks, addCamera, updateCamera, deleteCamera, addFilmStock, updateFilmStock, deleteFilmStock } =
     useFilmLogStore();
+  // Built-in cameras only appear once a roll uses them.
+  const cameraChoices = pickableCameras(cameras, rolls);
 
   const [cameraModal, setCameraModal] = useState<{ open: boolean; target?: Camera }>({ open: false });
   const [filmModal, setFilmModal] = useState<{ open: boolean; target?: FilmStock }>({ open: false });
@@ -148,7 +150,8 @@ export default function GearScreen() {
 
       {/* ── Cameras ── */}
       <Text style={s.sectionTitle}>Cameras</Text>
-      {cameras.map((c) => (
+      {cameraChoices.length === 0 && <Text style={s.rowLabel}>No cameras yet. Add the ones you shoot with.</Text>}
+      {cameraChoices.map((c) => (
         <View key={c.id} style={s.row}>
           <Text style={s.rowLabel}>{c.name}</Text>
           {c.isCustom ? (

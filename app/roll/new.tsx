@@ -5,8 +5,8 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFilmLogStore } from "@/store";
-import { COLORS, FRAME_COUNT_OPTIONS } from "@/constants";
-import { uid, todayISO, rollsRemaining, hasDuplicateRollName } from "@/utils";
+import { COLORS, FRAME_COUNT_OPTIONS, UNKNOWN_CAMERA_ID } from "@/constants";
+import { uid, todayISO, rollsRemaining, hasDuplicateRollName, pickableCameras } from "@/utils";
 import ShotIsoField from "@/components/ShotIsoField";
 import ExpiredFilmField from "@/components/ExpiredFilmField";
 import { stockProcess } from "@/utils/filmMatch";
@@ -70,7 +70,8 @@ function PickerModal<T extends { id: string; name: string }>({
 export default function NewRollScreen() {
   const router = useRouter();
   const { purchaseId } = useLocalSearchParams<{ purchaseId?: string }>();
-  const { rolls, cameras, filmStocks, purchases, addRoll, loadRollFromPurchase } = useFilmLogStore();
+  const { rolls, cameras, filmStocks, purchases, addRoll, loadRollFromPurchase, addCamera } = useFilmLogStore();
+  const cameraChoices = pickableCameras(cameras, rolls);
   const available = purchases.filter((p) => rollsRemaining(p) > 0);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState(
     available.find((p) => p.id === purchaseId)?.id ?? available[0]?.id ?? ""
@@ -80,7 +81,24 @@ export default function NewRollScreen() {
 
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
-  const [cameraId, setCameraId] = useState(cameras[0]?.id ?? "");
+  const [cameraId, setCameraId] = useState(cameraChoices[0]?.id ?? UNKNOWN_CAMERA_ID);
+  const [newCameraOpen, setNewCameraOpen] = useState(cameraChoices.length === 0);
+  const [newCameraName, setNewCameraName] = useState("");
+
+  function handleAddCamera() {
+    const name = newCameraName.trim();
+    if (!name) return;
+    const existing = cameras.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setCameraId(existing.id);
+    } else {
+      const camera = { id: uid(), name, isCustom: true };
+      addCamera(camera);
+      setCameraId(camera.id);
+    }
+    setNewCameraName("");
+    setNewCameraOpen(false);
+  }
   const [filmStockId, setFilmStockId] = useState(purchase?.filmStockId ?? filmStocks[0]?.id ?? "");
   const stockName = (id: string) => filmStocks.find((f) => f.id === id)?.name ?? "Unknown film";
   const [shotIso, setShotIso] = useState(""); // empty = box speed
@@ -182,10 +200,34 @@ export default function NewRollScreen() {
 
       {/* Camera */}
       <Text style={s.label}>Camera</Text>
-      <TouchableOpacity style={s.picker} onPress={() => setCameraPickerOpen(true)}>
-        <Text style={s.pickerText}>{selectedCamera?.name ?? "Select camera"}</Text>
-        <Text style={s.pickerArrow}>›</Text>
-      </TouchableOpacity>
+      {cameraChoices.length > 0 && (
+        <TouchableOpacity style={s.picker} onPress={() => setCameraPickerOpen(true)}>
+          <Text style={s.pickerText}>{selectedCamera?.name ?? "Select camera"}</Text>
+          <Text style={s.pickerArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+      {newCameraOpen ? (
+        <View style={s.addCameraRow}>
+          <TextInput
+            style={[s.input, { flex: 1 }]}
+            value={newCameraName}
+            onChangeText={setNewCameraName}
+            onSubmitEditing={handleAddCamera}
+            placeholder="Your camera, e.g. Nikon FE"
+            placeholderTextColor={COLORS.textDim}
+          />
+          <TouchableOpacity style={s.addCameraBtn} onPress={handleAddCamera}>
+            <Text style={s.addCameraBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={() => setNewCameraOpen(true)}>
+          <Text style={[s.skipText, { marginTop: 8 }]}>+ Add a camera</Text>
+        </TouchableOpacity>
+      )}
+      {cameraChoices.length === 0 && (
+        <Text style={s.pickerSub}>Optional: without one, the roll is saved with an unknown camera.</Text>
+      )}
 
       {/* Film Stock */}
       <Text style={s.label}>Film Stock</Text>
@@ -285,7 +327,7 @@ export default function NewRollScreen() {
       <PickerModal
         visible={cameraPickerOpen}
         title="Select Camera"
-        items={cameras}
+        items={cameraChoices}
         selectedId={cameraId}
         onSelect={(c) => setCameraId(c.id)}
         onClose={() => setCameraPickerOpen(false)}
@@ -337,6 +379,9 @@ const s = StyleSheet.create({
   toggleSub: { fontSize: 9, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
   emptyTitle: { fontSize: 16, color: COLORS.textPrimary, fontFamily: "Courier New", textAlign: "center" },
   emptySub: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", textAlign: "center", marginTop: 8 },
+  addCameraRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  addCameraBtn: { backgroundColor: COLORS.amber, paddingHorizontal: 16, justifyContent: "center" },
+  addCameraBtnText: { fontSize: 10, color: COLORS.bg, fontFamily: "Courier New", letterSpacing: 1.5, textTransform: "uppercase" },
   skipText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1, textDecorationLine: "underline" },
   submitBtn: {
     marginTop: 32, backgroundColor: COLORS.amber,

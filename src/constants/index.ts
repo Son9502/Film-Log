@@ -27,10 +27,18 @@ export const FONTS = {
 };
 
 // ── Default Gear ─────────────────────────────────────────────────────────────
+/** Used for a roll logged without choosing a camera. */
+export const UNKNOWN_CAMERA_ID = "other";
+
+/**
+ * Cameras built into earlier versions. They stay so rolls that use them keep their
+ * name, but pickers only offer one once a roll uses it (see `pickableCameras`), so
+ * new accounts start with no cameras and add their own.
+ */
 export const DEFAULT_CAMERAS: Camera[] = [
   { id: "nikon-fe", name: "Nikon FE", isCustom: false },
   { id: "nikon-l35ad2", name: "Nikon L35AD2", isCustom: false },
-  { id: "other", name: "Other", isCustom: false },
+  { id: UNKNOWN_CAMERA_ID, name: "Unknown camera", isCustom: false },
 ];
 
 export const DEFAULT_FILM_STOCKS: FilmStock[] = [

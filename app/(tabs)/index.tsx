@@ -6,7 +6,7 @@ import {
 import { useRouter } from "expo-router";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
-import { formatDate, rollProgress, statusColors } from "@/utils";
+import { formatDate, rollProgress, statusColors, pickableCameras } from "@/utils";
 import { Roll } from "@/types";
 import { ROLL_STATUS_LIST } from "@/constants";
 import { filterRolls, RollFilters } from "@/utils/rollFilter";
@@ -168,7 +168,7 @@ export default function RollsScreen() {
           <Dropdown
             placeholder="Any camera"
             selectedId={filters.cameraId}
-            items={cameras.map((c) => ({ id: c.id, label: c.name }))}
+            items={pickableCameras(cameras, rolls).map((c) => ({ id: c.id, label: c.name }))}
             onSelect={(i) => setFilter({ cameraId: i.id })}
           />
           <TextInput
