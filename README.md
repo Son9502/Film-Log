@@ -13,7 +13,8 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 - **Frame logging** — record shutter speed, aperture, lighting condition, subject, notes, location, timestamp, flash used, filter (UV/polarizer/ND/colour), weather condition, star rating, and free-form tags per frame
 - **Quick log** — tap ⚡ to instantly log a frame with GPS only; fill in the rest after developing
 - **Development records** — track developer, dilution, dev time, dev temperature, push/pull stops, fixer, and Photo-Flo per roll
-- **Scan attachment** — attach a scan to a frame, or bulk-import a ZIP or a photo selection; files go to the Supabase `scans` bucket.
+- **Scan attachment** — attach a scan to a frame, or bulk-import scans. On a phone, choose **Import from Photos** (tap order is kept) or **Import from Files** (one image, several, or ZIPs; Files also reaches iCloud Drive and Google Drive). Scans keep full quality and go to the Supabase `scans` bucket.
+- **Upload checks** — each file is checked before upload: it must really be a JPEG, PNG, TIFF or HEIC (judged by its contents, not its name), at most 50 MB per scan and 500 MB per ZIP. Uploads time out if they stall, retry once on a network error, and failed files can be retried from the import screen.
 - **Backfill scans** — when an import has more photos than logged frames, the missing frames are created for you.
 - **Scan import progress** — bulk uploads show the current file, elapsed wait, number of scans processed, and any failures; the bar advances per file, not by transferred bytes. Elapsed time does not confirm the connection is active. Keep the import screen open and verify the frame attachments on another device before deleting originals.
 - **Scan import filenames** — selected files with matching names are assigned independently. On native, ZIP images in different folders can have the same basename without overwriting each other.
@@ -21,8 +22,8 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 - **Scan preview orientation** — the frame editor sizes the preview using the loaded image's dimensions; portrait, square and landscape scans fit without cropping. Rotation controls are temporary preview adjustments and do not modify saved scans or exports.
 - **GPS & location** — auto-captures GPS coordinates when logging a frame (if permitted); manual text location with geocoding (address → lat/lng); Shot Map (a Map view on the Journal tab) pins all frames on a map
 - **Location journals** — every unique location label becomes a journal entry: write notes about the place, browse all frames shot there in a chronological timeline; serves as a living trip report
-- **Gear management** — manage cameras and film stocks; 17 stocks and 3 cameras included by default, add your own
-- **Film inventory** — log film purchases (stock, quantity, price, expiry), see what is expired, and load a roll straight from the inventory. Loading expired film suggests extra exposure (about +1 stop per decade, adjusted for storage, speed and slide film), and development treats that as box speed rather than a pull
+- **Gear management** — manage cameras and film stocks; 17 stocks included. New accounts start with no cameras: add your own in Gear or while creating a roll
+- **Film inventory** — log film purchases (stock, quantity, price, expiry as YYYY-MM-DD or YYYY-MM), see what is expired, and load a roll straight from the inventory. Loading expired film suggests extra exposure (about +1 stop per decade, adjusted for storage, speed and slide film), and development treats that as box speed rather than a pull
 - **Lab drop-offs** — drop several rolls at a lab at once, choosing per roll whether the lab develops, scans or both; record cost and pick-up
 - **Development calculator** — times for B&W (38 developer/film recipes), C-41, E-6 and ECN-2, with push/pull, temperature compensation and a step-by-step process list; save the result to a roll
 - **Chemical sets & batches** — on the Develop tab, track shelf life and capacity of mixed chemistry and develop a batch of rolls at once; the app suggests the time per roll and blocks mixes that can't share a tank (remjet with non-remjet, different processes, different push/pull)
@@ -360,6 +361,19 @@ create policy "delete own scans" on storage.objects
 
 Scans are stored at `{userId}/{rollId}/{shotId}.{ext}` and served via signed URLs (1-hour expiry).
 
+The app rejects scans over 50 MB, which is Supabase's per-file limit on the free plan. On a paid plan, raise the bucket's limit (Storage → scans → Edit) and `MAX_SCAN_MB` in `src/utils/scanUploadSafety.ts` to match.
+
+---
+
+## Deployment (web)
+
+1. Build the static site: `npx expo export --platform web`. The output goes to `dist/`.
+2. Host `dist/` on Vercel, Netlify or Cloudflare Pages. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the host's environment settings, because they're built into the bundle.
+3. Send every path to `index.html` (a single-page-app rewrite) so links like `/roll/abc` work when opened or refreshed.
+4. In Supabase → Authentication → URL Configuration, set **Site URL** to the live address and add `https://<live address>/**` and `filmlog://**` to **Redirect URLs**, so sign-up and password-reset emails link to the live site and the phone app.
+
+The phone app runs through Expo Go; a standalone build (EAS, TestFlight) comes later.
+
 ---
 
 ## Project Structure
@@ -372,7 +386,7 @@ filmlog/
 │   │   ├── inventory.tsx       # Film Stash (inventory)
 │   │   ├── develop.tsx         # Develop tab: chemical sets, batches, calculator link
 │   │   ├── journal.tsx         # Location journals tab (List / Map toggle)
-│   │   ├── walks.tsx           # Photo walks tab (My / Community / Recommended)
+│   │   ├── walks.tsx           # Photo walks tab (hidden in v1: SOCIAL_ENABLED = false)
 │   │   └── settings.tsx        # Settings tab
 │   ├── calculator.tsx          # Development calculator
 │   ├── batch/
@@ -384,13 +398,13 @@ filmlog/
 │   ├── journal/
 │   │   └── [label].tsx         # Location journal detail + frame timeline
 │   ├── walks/
-│   │   ├── [id].tsx            # Walk detail — stops, completion, review
+│   │   ├── [id].tsx            # Walk detail — stops, completion, review (hidden in v1)
 │   │   └── new.tsx             # Create / edit walk with stop builder
 │   ├── roll/
 │   │   ├── [id].tsx            # Roll detail, frame list, scan attachment, film strip, shot map
 │   │   ├── new.tsx             # New roll form
-│   │   ├── import.tsx          # ZIP scan import (iOS/Android)
-│   │   └── import.web.tsx      # ZIP scan import (web, uses fflate)
+│   │   ├── import.tsx          # Bulk scan import from Photos or Files, incl. ZIPs (iOS/Android)
+│   │   └── import.web.tsx      # Bulk scan import from images or ZIPs (web)
 │   ├── profile/
 │   │   └── [userId].tsx        # Public photographer profile
 │   ├── settings/
@@ -435,7 +449,7 @@ filmlog/
 ## Default Gear
 
 ### Cameras
-Nikon FE · Nikon L35AD2 · Other
+Nikon FE · Nikon L35AD2 · Unknown camera. These appear only once a roll uses them; new accounts start with no cameras.
 
 ### Film Stocks (17 included)
 Kodak Portra 160/400/800, Gold 200, ColorPlus 200, Ektar 100, UltraMax 400, Tri-X 400
@@ -460,9 +474,9 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 | 5 — Frame Metadata | ✅ Done | Per-frame timestamp, flash, filter (UV/polarizer/ND/colour), weather condition; development details (developer, dilution, time, temperature, push/pull, fixer, Photo-Flo); quick-log ⚡ FAB |
 | 6 — Location Journals | ✅ Done | Location tab grouping all shot places; per-location notes editor; chronological frame timeline per location; full Supabase sync |
 | 7 — Gamification | ✅ Done | Star ratings (1–5) and free-form tags per frame; stats dashboard with 15 metrics; badge system with 28 achievements across volume, craft, darkroom, scanning, and rating categories |
-| 8 — Photo / Art Walks | ✅ Done | Curated walking routes for photographers: personal walks (private, saved to profile), community walks (public, discoverable by city), and recommended/featured walks; stop-by-stop waypoints with location description and shooting tips; completion tracking; star ratings and short reviews; Shot Map overlay showing the walk route; auto-link stops to Location Journals; 4 new walk-specific badges (First Walk, Walker ×5, Trail Blazer, Walk Critic) |
+| 8 — Photo / Art Walks | ✅ Built, hidden in v1 | Curated walking routes for photographers: personal walks (private, saved to profile), community walks (public, discoverable by city), and recommended/featured walks; stop-by-stop waypoints with location description and shooting tips; completion tracking; star ratings and short reviews; Shot Map overlay showing the walk route; auto-link stops to Location Journals; 4 new walk-specific badges (First Walk, Walker ×5, Trail Blazer, Walk Critic) |
 | 9 — Public Profiles | 🚧 In progress | Opt-in public photographer profile. **Done:** handle, display name, bio, avatar upload, public/private toggle, public rolls, public walks (`supabase/04`, `05`). **Remaining:** badges and stats on the profile, completed walks, curated favourite shots, full technical cards per frame |
-| 10 — AI Film Advisor | 🔜 Planned | Context-aware chatbot using the user's roll history: stock recommendations, exposure guidance, home dev walkthrough, pattern analysis, troubleshooting |
+| 10 — AI helpers | 🔜 Planned (v2) | **Film advisor:** advice only, using the user's roll history (which film for a situation, what to improve, shot ideas); it never edits data. **Voice logging:** speak a frame's settings; speech is recognised on the device and recordings are never stored or uploaded. **Frame order from file names:** match scans to frames using the scanner's naming convention |
 | 11 — Sharing & Export | 🚧 In progress | **Done:** spreadsheet export of rolls and frames; ZIP export of scans with JPEG EXIF metadata. **Remaining:** share journals, rolls and shots via share sheet |
 | Auth Polish | 🔜 Planned | Google/Yahoo OAuth, custom Supabase email templates |
 
