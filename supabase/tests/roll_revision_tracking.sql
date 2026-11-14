@@ -17,7 +17,7 @@ BEGIN
   INSERT INTO public.rolls
     (id, user_id, film_stock_id, camera_id, iso, frame_count, status, loaded_at, created_at, updated_at, sync_revision)
   VALUES
-    (roll_id, owner_id, 'stock', 'camera', '400', 36, 'Shooting', 'test', 'test', 'test', 999);
+    (roll_id, owner_id, 'stock', 'camera', '400', 36, 'Shooting', '2026-01-01', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 999);
   SELECT sync_revision INTO revision FROM public.rolls WHERE id = roll_id;
   IF revision <> 1 THEN RAISE EXCEPTION 'Roll insert revision: expected 1, got %', revision; END IF;
 

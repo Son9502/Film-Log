@@ -30,7 +30,7 @@ BEGIN
   SELECT * INTO f FROM sync_test_fixture;
   result := public.guarded_roll_write(f.roll_id, NULL, jsonb_build_object(
     'name', 'original', 'film_stock_id', 'stock', 'camera_id', 'camera', 'iso', '400',
-    'frame_count', 36, 'status', 'Shooting', 'loaded_at', 'test', 'created_at', 'test', 'updated_at', 'test'
+    'frame_count', 36, 'status', 'Shooting', 'loaded_at', '2026-01-01', 'created_at', '2026-01-01T00:00:00.000Z', 'updated_at', '2026-01-01T00:00:00.000Z'
   ));
   IF result <> '{"status":"saved","revision":1}'::jsonb THEN RAISE EXCEPTION 'Roll create: %', result; END IF;
 
@@ -40,7 +40,7 @@ BEGIN
   IF result <> '{"status":"conflict"}'::jsonb THEN RAISE EXCEPTION 'Stale roll update: %', result; END IF;
   result := public.guarded_roll_write(f.roll_id, NULL, jsonb_build_object(
     'name', 'duplicate', 'film_stock_id', 'stock', 'camera_id', 'camera', 'iso', '400',
-    'frame_count', 36, 'status', 'Shooting', 'loaded_at', 'test', 'created_at', 'test', 'updated_at', 'test'
+    'frame_count', 36, 'status', 'Shooting', 'loaded_at', '2026-01-01', 'created_at', '2026-01-01T00:00:00.000Z', 'updated_at', '2026-01-01T00:00:00.000Z'
   ));
   IF result <> '{"status":"conflict"}'::jsonb THEN RAISE EXCEPTION 'Duplicate roll create: %', result; END IF;
 
@@ -74,7 +74,7 @@ BEGIN
   END;
   BEGIN
     INSERT INTO public.rolls (id, user_id, film_stock_id, camera_id, iso, frame_count, status, loaded_at, created_at, updated_at)
-    VALUES (f.roll_id || '-unsafe', f.owner_id, 'stock', 'camera', '400', 36, 'Shooting', 'test', 'test', 'test');
+    VALUES (f.roll_id || '-unsafe', f.owner_id, 'stock', 'camera', '400', 36, 'Shooting', '2026-01-01', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
     RAISE EXCEPTION 'Direct roll insert was not blocked';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;

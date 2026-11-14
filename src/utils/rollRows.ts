@@ -2,6 +2,34 @@
 import { normalizeStatus } from "@/constants";
 import type { Roll, Shot } from "@/types";
 
+// ── Timestamps read back from Postgres ───────────────────────────────────────
+// If a date column is timestamptz rather than text, Postgres returns
+// "2026-11-13T05:22:11.123+00:00" for what the app wrote as "…Z", or midnight with a
+// time for a bare date. Sync compares values as strings, so map them back to the
+// app's form; otherwise every roll looks edited and is rewritten on every sync.
+// Values the app wrote itself (ending in "Z", or a bare date) pass through unchanged.
+const OFFSET_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?[+-]\d{2}(:?\d{2})?$/;
+
+export function normalizeInstant(v: unknown): unknown {
+  if (typeof v !== "string" || !OFFSET_TIME.test(v)) return v;
+  // JS only parses "+hh:mm" offsets; Postgres may print "+hh" or "+hhmm".
+  const d = new Date(v.replace(" ", "T").replace(/([+-]\d{2}):?(\d{2})?$/, (_, h, m) => `${h}:${m ?? "00"}`));
+  return Number.isNaN(d.getTime()) ? v : d.toISOString();
+}
+
+/** A calendar-day column: midnight UTC becomes the bare date the app stored. */
+export function normalizeDay(v: unknown): unknown {
+  const iso = normalizeInstant(v);
+  return typeof iso === "string" && iso !== v && iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
+}
+
+/** Frame times are stored as "YYYY-MM-DD HH:mm" (local, no zone). */
+export function normalizeShotTime(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}):00(?:\.0+)?(?:Z|\+00(?::?00)?)$/.exec(v);
+  return m ? `${m[1]} ${m[2]}` : v;
+}
+
 export function rollToDb(roll: Roll, userId: string) {
   return {
     id: roll.id,
@@ -44,12 +72,12 @@ export function dbToRoll(row: any): Roll {
     iso: row.iso,
     frameCount: row.frame_count,
     status: normalizeStatus(row.status),
-    loadedAt: row.loaded_at,
-    labAt: row.lab_at ?? undefined,
+    loadedAt: normalizeDay(row.loaded_at) as string,
+    labAt: (normalizeDay(row.lab_at) as string | null) ?? undefined,
     labDropoffId: row.lab_dropoff_id ?? undefined,
-    backedUpAt: row.backed_up_at ?? undefined,
+    backedUpAt: (normalizeInstant(row.backed_up_at) as string | null) ?? undefined,
     backedUpCount: row.backed_up_count ?? undefined,
-    developedAt: row.developed_at ?? undefined,
+    developedAt: (normalizeDay(row.developed_at) as string | null) ?? undefined,
     notes: row.notes ?? undefined,
     locationLabel: row.location_label ?? undefined,
     // Supabase returns nested shots in no fixed order, so sort them by frame.
@@ -67,8 +95,8 @@ export function dbToRoll(row: any): Roll {
     expiryCompStops: row.expiry_comp_stops != null && Number(row.expiry_comp_stops) !== 0
       ? Number(row.expiry_comp_stops) : undefined,
     isPublic: row.is_public ?? false,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: normalizeInstant(row.created_at) as string,
+    updatedAt: normalizeInstant(row.updated_at) as string,
   };
 }
 
@@ -107,7 +135,7 @@ export function dbToShot(row: any): Shot {
     notes: row.notes ?? undefined,
     locationLabel: row.location_label ?? undefined,
     scanUri: row.scan_uri ?? undefined,
-    timestamp: row.timestamp ?? undefined,
+    timestamp: (normalizeShotTime(row.timestamp) as string | null) ?? undefined,
     flash: row.flash ?? undefined,
     filter: row.filter ?? undefined,
     weather: row.weather ?? undefined,

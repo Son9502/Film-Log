@@ -128,3 +128,21 @@ describe("todayISO", () => {
     expect(todayISO(new Date(2026, 0, 5, 0, 5))).toBe("2026-01-05");
   });
 });
+
+describe("timestamps from timestamptz columns", () => {
+  const { normalizeInstant, normalizeDay, normalizeShotTime } = jest.requireActual("./rollRows");
+  it("maps Postgres output back to what the app stored", () => {
+    expect(normalizeInstant("2026-11-13T05:22:11.123+00:00")).toBe("2026-11-13T05:22:11.123Z");
+    expect(normalizeInstant("2026-11-13 05:22:11.123456+00")).toBe("2026-11-13T05:22:11.123Z");
+    expect(normalizeDay("2026-11-13T00:00:00+00:00")).toBe("2026-11-13");
+    expect(normalizeDay("2026-03-01T10:00:00+00:00")).toBe("2026-03-01T10:00:00.000Z");
+    expect(normalizeShotTime("2026-11-13T14:30:00+00:00")).toBe("2026-11-13 14:30");
+  });
+  it("leaves values the app wrote unchanged", () => {
+    for (const v of ["2026-11-13", "2026-11-13T05:22:11Z", "2026-11-13T05:22:11.123Z", "2026-11-13 14:30", null, undefined]) {
+      expect(normalizeInstant(v)).toBe(v);
+      expect(normalizeDay(v)).toBe(v);
+      expect(normalizeShotTime(v)).toBe(v);
+    }
+  });
+});
