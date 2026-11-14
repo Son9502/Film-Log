@@ -4,7 +4,6 @@ import {
   StyleSheet, Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
 import { Directory, File, Paths } from "expo-file-system";
 import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
 import { unzipSync } from "fflate";
@@ -78,68 +77,61 @@ export default function ImportScansScreen() {
     }
   }
 
-  async function pickZip() {
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+
+  function showPicked(picked: { name: string; uri: string }[], emptyMessage: string) {
+    if (picked.length === 0) {
+      setError(emptyMessage);
+      return;
+    }
+    const imageFiles: FileEntry[] = identifyScanFiles(picked);
+    setFiles(imageFiles);
+    setAssignments(assignScanFrames(imageFiles, frameNumbers));
+    setStep("preview");
+  }
+
+  /** Photos keeps the order you tapped. */
+  async function pickFromPhotos() {
     setError(null);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled) return;
-
-      // fflate's async unzip needs Web Workers, which React Native lacks, so unzip synchronously.
-      const zipBytes = await new File(result.assets[0].uri).bytes();
-      const unzipped = unzipSync(zipBytes, {
-        filter: (entry) => IMAGE_EXTS.test(entry.name) && !entry.name.startsWith("__MACOSX"),
-      });
-
-      const destDir = new Directory(Paths.cache, `import_${Date.now()}`);
-      destDir.create({ intermediates: true });
-
-      const imageFiles = identifyScanFiles(Object.entries(unzipped)
-        .map(([path, data]) => ({ name: path.split("/").pop() ?? path, data }))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })))
-        .map(({ id, name, data }) => {
-          const file = new File(destDir, `${id}_${name}`);
-          file.write(data);
-          return { id, name, uri: file.uri };
-        });
-
-      if (imageFiles.length === 0) {
-        setError("No image files found in the ZIP.");
-        return;
-      }
-
-      setFiles(imageFiles);
-      setAssignments(assignScanFrames(imageFiles, frameNumbers));
-      setStep("preview");
+      const picked = await pickScansFromPhotos(true);
+      if (picked) showPicked(picked, "No photos selected.");
     } catch (e: any) {
-      setError(e.message ?? "Failed to read ZIP file.");
+      setError(e.message ?? "Failed to pick photos.");
     }
   }
 
-  async function pickImages(source: "photos" | "files") {
+  /** One image, several, or ZIPs of scans (or a mix), sorted by file name. */
+  async function pickFromFiles() {
     setError(null);
     try {
-      const picked = source === "photos" ? await pickScansFromPhotos(true) : await pickScansFromFiles(true);
+      const picked = await pickScansFromFiles(true, true);
       if (!picked) return;
 
-      if (picked.length === 0) {
-        setError("No images selected.");
-        return;
+      const images = picked.filter((p) => !p.isZip && IMAGE_EXTS.test(p.name));
+      const zips = picked.filter((p) => p.isZip);
+      if (zips.length > 0) {
+        const destDir = new Directory(Paths.cache, `import_${Date.now()}`);
+        destDir.create({ intermediates: true });
+        let n = 0;
+        for (const zip of zips) {
+          // fflate's async unzip needs Web Workers, which React Native lacks, so unzip synchronously.
+          const unzipped = unzipSync(await new File(zip.uri).bytes(), {
+            filter: (entry) => IMAGE_EXTS.test(entry.name) && !entry.name.startsWith("__MACOSX"),
+          });
+          for (const [path, data] of Object.entries(unzipped)) {
+            const name = path.split("/").pop() ?? path;
+            const file = new File(destDir, `${n++}_${name}`);
+            file.write(data);
+            images.push({ name, uri: file.uri });
+          }
+        }
       }
 
-      // Files keep their names, so sort them like a ZIP; Photos keeps the order you tapped.
-      const ordered = source === "files"
-        ? [...picked].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
-        : picked;
-      const imageFiles: FileEntry[] = identifyScanFiles(ordered);
-
-      setFiles(imageFiles);
-      setAssignments(assignScanFrames(imageFiles, frameNumbers));
-      setStep("preview");
+      showPicked(images.sort(byName), zips.length ? "No images found in the selected files." : "No images selected.");
     } catch (e: any) {
-      setError(e.message ?? "Failed to pick photos.");
+      setError(e.message ?? "Failed to read the selected files.");
     }
   }
 
@@ -235,30 +227,23 @@ export default function ImportScansScreen() {
       <View style={s.container}>
         <Text style={s.sectionTitle}>Import Scans</Text>
         <Text style={s.instructions}>
-          Choose how to import scans for this roll. Files will be sorted alphabetically
-          and matched to frames in order — you can reassign them before uploading.
+          Choose where your scans are. They're matched to frames in order, and you can
+          reassign them before uploading.
         </Text>
         {error && <Text style={s.error}>{error}</Text>}
         <TouchableOpacity
           style={s.optionBtn}
-          onPress={pickZip}
+          onPress={pickFromPhotos}
         >
-          <Text style={s.optionBtnTitle}>Select ZIP File</Text>
-          <Text style={s.optionBtnSub}>Extract and import a ZIP of scan images</Text>
+          <Text style={s.optionBtnTitle}>Import from Photos</Text>
+          <Text style={s.optionBtnSub}>One or more images from your library, in the order you tap them</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={s.optionBtn}
-          onPress={() => pickImages("files")}
+          onPress={pickFromFiles}
         >
-          <Text style={s.optionBtnTitle}>Select Files</Text>
-          <Text style={s.optionBtnSub}>Originals from Files or iCloud Drive, sorted by file name</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={s.optionBtn}
-          onPress={() => pickImages("photos")}
-        >
-          <Text style={s.optionBtnTitle}>Select From Photos</Text>
-          <Text style={s.optionBtnSub}>Pick images from your library, in the order you tap them</Text>
+          <Text style={s.optionBtnTitle}>Import from Files</Text>
+          <Text style={s.optionBtnSub}>One image, several, or a ZIP, from iCloud Drive, Google Drive or anywhere in Files. Sorted by file name, full quality.</Text>
         </TouchableOpacity>
       </View>
     );
