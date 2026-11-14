@@ -4,8 +4,9 @@ import { useRouter } from "expo-router";
 import { COLORS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { signOut } from "@/services/supabase";
-import { rollsToCsv, framesToCsv } from "@/utils/exportCsv";
-import { saveCsvFiles, saveZipFile } from "@/utils/exportFiles";
+import { buildXlsx } from "@/utils/exportXlsx";
+import { saveBinaryFile, saveZipFile, XLSX_MIME } from "@/utils/exportFiles";
+import { todayISO } from "@/utils";
 import { buildScanArchive } from "@/utils/exportZip";
 import { exportCurrentLocalSnapshot } from "@/utils/snapshotExport";
 import SyncPanel from "@/components/SyncPanel";
@@ -26,10 +27,7 @@ export default function SettingsScreen() {
       camera: (id: string) => cameras.find((c) => c.id === id)?.name ?? id,
     };
     try {
-      await saveCsvFiles([
-        { name: "filmlog-rolls.csv", content: rollsToCsv(rolls, names) },
-        { name: "filmlog-frames.csv", content: framesToCsv(rolls, names) },
-      ]);
+      await saveBinaryFile(`filmlog-${todayISO()}.xlsx`, buildXlsx(rolls, names), XLSX_MIME);
       setExportMsg(`Exported ${rolls.length} rolls.`);
     } catch (e) {
       setExportMsg(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -76,8 +74,8 @@ export default function SettingsScreen() {
       </TouchableOpacity>
       <TouchableOpacity style={s.row} onPress={exportData}>
         <View>
-          <Text style={s.rowLabel}>Export Data (CSV)</Text>
-          <Text style={s.rowSub}>{exportMsg || "Rolls and frames as spreadsheets"}</Text>
+          <Text style={s.rowLabel}>Export Data (Spreadsheet)</Text>
+          <Text style={s.rowSub}>{exportMsg || "One .xlsx: all rolls, all frames, and a sheet per roll"}</Text>
         </View>
         <Text style={s.arrow}>›</Text>
       </TouchableOpacity>

@@ -179,7 +179,7 @@ Apart from rolls and frames, there's no conflict resolution: remote rows overwri
 
 ### Search, stats and export
 - `src/utils/rollFilter.ts` powers the Rolls-tab search and filters; `src/utils/summary.ts` powers the stats card (this month / all time).
-- `src/utils/exportCsv.ts` builds rolls and frames CSVs; `exportFiles.ts` downloads them on web or opens the share sheet on native.
+- `src/utils/exportXlsx.ts` builds one .xlsx (Rolls, All frames, a sheet per roll, linked) by writing the XML and zipping it with fflate; `exportFiles.ts` downloads it on web or opens the share sheet on native.
 
 ### Badges & notifications
 - Badges are **computed entirely on the client** from store data (`src/utils/badges.ts` + `BADGES` in constants). There is no database table for them.

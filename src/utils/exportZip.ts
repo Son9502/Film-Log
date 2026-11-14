@@ -1,4 +1,5 @@
 import piexif from "piexifjs";
+import { scanArchivePath, scanExtension } from "./scanPaths";
 import { zipSync, strToU8 } from "fflate";
 import { Roll, Shot } from "@/types";
 import { getScanUrl } from "@/services/supabase";
@@ -20,10 +21,6 @@ type FrameMetadata = {
   location?: string;
   notes?: string;
 };
-
-function safeName(value: string): string {
-  return value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "_") || "roll";
-}
 
 function rational(value: string | undefined, prefix = ""): [number, number] | undefined {
   if (!value) return undefined;
@@ -135,10 +132,6 @@ function addExif(jpeg: Uint8Array, metadata: FrameMetadata): Uint8Array {
   return base64ToBytes(base64);
 }
 
-function extension(path: string): string {
-  return path.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
-}
-
 export async function buildScanArchive(
   rolls: Roll[],
   names: Names,
@@ -154,10 +147,8 @@ export async function buildScanArchive(
       const response = await fetch(await getScanUrl(shot.scanUri));
       if (!response.ok) throw new Error(`Could not download scan for ${roll.id}, frame ${shot.frame}.`);
       const original = new Uint8Array(await response.arrayBuffer());
-      const ext = extension(shot.scanUri);
-      const folder = `${safeName(roll.name || roll.id)}-${safeName(roll.id)}`;
-      const fileName = `frame-${String(shot.frame).padStart(3, "0")}.${ext || "jpg"}`;
-      const filePath = `${folder}/${fileName}`;
+      const ext = scanExtension(shot.scanUri);
+      const filePath = scanArchivePath(roll, shot)!;
       files[filePath] = ext === "jpg" || ext === "jpeg" ? addExif(original, metadata) : original;
       index.push(metadata);
       scanCount++;

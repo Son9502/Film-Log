@@ -26,13 +26,13 @@ _Last reviewed: 2026-11-10._
 | Film inventory | ✅ Built (`supabase/07_film_purchases.sql`) |
 | Stats card (this month, most-shot stocks, spending) | ✅ Built (top of the stats page, this month / all time) |
 | Search and filters | ✅ Built (Rolls tab) |
-| Data export | ✅ CSV of rolls and frames; ZIP of scans with JPEG EXIF metadata |
+| Data export | ✅ One spreadsheet (.xlsx): a Rolls sheet linking to a sheet per roll, plus All frames; ZIP of scans with JPEG EXIF metadata |
 | Units setting | ✅ °C/°F and km/mi preferences; values stored in metric |
 | Expired-film flag | ✅ Built (Film Stash tab); loading expired film suggests extra exposure, and batches develop it from box speed (`supabase/20`) |
 | Mobile build tested on a phone | 🟡 Runs in Expo Go; flows to re-test now that sync is back (§4) |
 | Database security fixes | 🟡 Script written (`supabase/06_security_hardening.sql`); run it in Supabase and re-test walks and profiles |
 | Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); run the scripts to turn it on |
-| Automated tests | ✅ Jest (`npm test`): calculator, chemistry, summary, filters, CSV |
+| Automated tests | ✅ Jest (`npm test`): calculator, chemistry, summary, filters, spreadsheet export |
 | Public deployment | ❌ Not deployed |
 | Public GitHub repo | ✅ Created |
 
@@ -103,7 +103,7 @@ Unshot film no longer counts as a roll. It lives in the inventory (§3.4), and l
 ### 3.5 Usability
 
 - **Search and filters:** filter rolls by film stock, camera, date range, status and location, and search by roll name.
-- **Data export:** a CSV of rolls and frames, plus a ZIP of the original scans per roll. Exported JPEGs include frame metadata in EXIF; TIFFs stay unchanged. This is required before "safe to delete locally" means anything.
+- **Data export:** one spreadsheet (.xlsx) with a Rolls sheet, an All frames sheet and a sheet per roll (each roll links to its sheet and back), plus a ZIP of the original scans per roll. Exported JPEGs include frame metadata in EXIF; TIFFs stay unchanged. This is required before "safe to delete locally" means anything.
 - **Photo metadata on export:** exported JPEG scans get the frame's details written into their EXIF data: camera, ISO, shutter speed, aperture, date shot and GPS, with the film stock and roll name in the image description. Scans in cloud storage stay untouched; metadata is only added to the exported copies. TIFF files are exported without it.
 - **Units:** °C or °F, and kilometers or miles. Values are stored in Celsius/kilometers and converted for display.
 

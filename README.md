@@ -28,7 +28,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 - **Chemical sets & batches** — on the Develop tab, track shelf life and capacity of mixed chemistry and develop a batch of rolls at once; the app suggests the time per roll and blocks mixes that can't share a tank (remjet with non-remjet, different processes, different push/pull)
 - **Scan backup check** — checks whether attached cloud scans respond to a HEAD request. Before deleting originals, export the scans and open the downloaded files to verify their contents; the check alone does not download them.
 - **Search & filters** — search rolls by name, film, camera and notes; filter by status, film stock, camera, location and date range
-- **Stats card & export** — this-month and all-time rolls, frames, most-shot stocks and spending; export rolls and frames to CSV, plus scan ZIPs with JPEG EXIF metadata
+- **Stats card & export** — this-month and all-time rolls, frames, most-shot stocks and spending; export rolls and frames to one spreadsheet (a sheet per roll, linked from a Rolls sheet), plus scan ZIPs with JPEG EXIF metadata
 - **Local snapshot export** — Settings or the signed-out login screen can export the current device's local data as JSON for safekeeping before sync changes. It may contain private notes, locations and account ID; keep it private. The snapshot contains scan references, not image files, and there is no in-app restore yet. Export scans separately and verify both files. Repeat on each device because their local data may differ.
 - **Conflict-safe roll sync** — rolls and frames sync between phone and web. Edits to different fields on two devices merge automatically; the same field changed differently on both is held back until you choose in Settings → Sync. Deletions sync too, and a roll changed elsewhere after you deleted it is restored instead of lost.
 - **Units** — choose °C/°F and km/mi; values are stored in Celsius and kilometers
@@ -419,7 +419,7 @@ filmlog/
 │       ├── chemistry.ts        # Shelf-life/capacity checks, batch mapping
 │       ├── summary.ts          # This-month / all-time stats
 │       ├── rollFilter.ts       # Roll search and filters
-│       ├── exportCsv.ts        # Roll/frame CSV export
+│       ├── exportXlsx.ts       # Roll/frame spreadsheet export
 │       ├── exportFiles.ts      # Platform-specific save/share helpers
 │       ├── exportZip.ts        # Scan archive and JPEG EXIF metadata
 │       └── units.ts            # Metric storage and display conversions
@@ -463,7 +463,7 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 | 8 — Photo / Art Walks | ✅ Done | Curated walking routes for photographers: personal walks (private, saved to profile), community walks (public, discoverable by city), and recommended/featured walks; stop-by-stop waypoints with location description and shooting tips; completion tracking; star ratings and short reviews; Shot Map overlay showing the walk route; auto-link stops to Location Journals; 4 new walk-specific badges (First Walk, Walker ×5, Trail Blazer, Walk Critic) |
 | 9 — Public Profiles | 🚧 In progress | Opt-in public photographer profile. **Done:** handle, display name, bio, avatar upload, public/private toggle, public rolls, public walks (`supabase/04`, `05`). **Remaining:** badges and stats on the profile, completed walks, curated favourite shots, full technical cards per frame |
 | 10 — AI Film Advisor | 🔜 Planned | Context-aware chatbot using the user's roll history: stock recommendations, exposure guidance, home dev walkthrough, pattern analysis, troubleshooting |
-| 11 — Sharing & Export | 🚧 In progress | **Done:** CSV export of rolls and frames; ZIP export of scans with JPEG EXIF metadata. **Remaining:** share journals, rolls and shots via share sheet |
+| 11 — Sharing & Export | 🚧 In progress | **Done:** spreadsheet export of rolls and frames; ZIP export of scans with JPEG EXIF metadata. **Remaining:** share journals, rolls and shots via share sheet |
 | Auth Polish | 🔜 Planned | Google/Yahoo OAuth, custom Supabase email templates |
 
 ---

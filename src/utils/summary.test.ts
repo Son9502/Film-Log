@@ -1,6 +1,5 @@
 import { monthSummary } from "./summary";
 import { filterRolls } from "./rollFilter";
-import { rollsToCsv, framesToCsv } from "./exportCsv";
 import { Roll } from "@/types";
 
 const roll = (o: Partial<Roll>): Roll => ({
@@ -38,13 +37,5 @@ describe("filterRolls", () => {
     expect(filterRolls(rolls, { from: "2026-07-01" }, names).map((r) => r.id)).toEqual(["a"]);
     expect(filterRolls(rolls, { query: "yosem" }, names).map((r) => r.id)).toEqual(["a"]);
     expect(filterRolls(rolls, { query: "cam c2" }, names).map((r) => r.id)).toEqual(["b"]);
-  });
-});
-
-describe("csv", () => {
-  it("escapes commas and quotes", () => {
-    const r = roll({ name: 'Say "hi", ok', shots: [{ id: "s", frame: 1, notes: "a,b" }] as any });
-    expect(rollsToCsv([r], names).split("\n")[1]).toContain('"Say ""hi"", ok"');
-    expect(framesToCsv([r], names).split("\n")[1]).toContain('"a,b"');
   });
 });
