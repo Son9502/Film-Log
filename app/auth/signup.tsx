@@ -5,6 +5,7 @@ import { signOut, signUp } from "@/services/supabase";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import AuthScreen from "@/components/AuthScreen";
+import PasswordInput from "@/components/PasswordInput";
 import { backOrReplace } from "@/utils/navigation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked } from "@/utils/accountSyncSafety";
@@ -116,13 +117,13 @@ export default function SignupScreen() {
       />
 
       <Text style={s.label}>Password</Text>
-      <TextInput
+      <PasswordInput
+        kind="new"
         style={s.input}
         value={password}
         onChangeText={setPassword}
         placeholder="Min. 8 chars, uppercase, number, symbol"
         placeholderTextColor={COLORS.textMuted}
-        secureTextEntry
       />
 
       {/* Strength bar */}
@@ -136,13 +137,13 @@ export default function SignupScreen() {
       )}
 
       <Text style={s.label}>Confirm Password</Text>
-      <TextInput
+      <PasswordInput
+        kind="new"
         style={s.input}
         value={confirm}
         onChangeText={setConfirm}
         placeholder="••••••••"
         placeholderTextColor={COLORS.textMuted}
-        secureTextEntry
       />
 
       <TouchableOpacity style={s.primaryBtn} onPress={handleSignup} disabled={loading}>

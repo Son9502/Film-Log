@@ -6,6 +6,7 @@ import { signIn, signOut, resetPassword } from "@/services/supabase";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import AuthScreen from "@/components/AuthScreen";
+import PasswordInput from "@/components/PasswordInput";
 import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked, unsyncedRollChanges } from "@/utils/accountSyncSafety";
 import { exportCurrentLocalSnapshot } from "@/utils/snapshotExport";
 
@@ -194,13 +195,12 @@ export default function LoginScreen() {
       />
 
       <Text style={s.label}>Password</Text>
-      <TextInput
+      <PasswordInput
         style={s.input}
         value={password}
         onChangeText={setPassword}
         placeholder="••••••••"
         placeholderTextColor={COLORS.textMuted}
-        secureTextEntry
       />
 
       <TouchableOpacity style={s.primaryBtn} onPress={handleLogin} disabled={loading}>

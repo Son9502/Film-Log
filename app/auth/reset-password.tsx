@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Text, TextInput, TouchableOpacity,
+  Text, TouchableOpacity,
   ActivityIndicator, StyleSheet,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -8,6 +8,7 @@ import { supabase } from "@/services/supabase";
 import { updatePassword } from "@/services/supabase";
 import { COLORS } from "@/constants";
 import AuthScreen from "@/components/AuthScreen";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -119,24 +120,24 @@ export default function ResetPasswordScreen() {
       {error && <Text style={s.error}>{error}</Text>}
 
       <Text style={s.label}>New Password</Text>
-      <TextInput
+      <PasswordInput
+        kind="new"
         style={s.input}
         value={password}
         onChangeText={setPassword}
         placeholder="Min. 8 characters"
         placeholderTextColor={COLORS.textMuted}
-        secureTextEntry
         autoFocus
       />
 
       <Text style={s.label}>Confirm Password</Text>
-      <TextInput
+      <PasswordInput
+        kind="new"
         style={s.input}
         value={confirm}
         onChangeText={setConfirm}
         placeholder="Re-enter password"
         placeholderTextColor={COLORS.textMuted}
-        secureTextEntry
       />
 
       <TouchableOpacity
