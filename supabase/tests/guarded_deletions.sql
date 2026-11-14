@@ -22,7 +22,7 @@ DO $$
 DECLARE
   f deletion_fixture%ROWTYPE;
   result jsonb;
-  fields jsonb := '{"name":"test","film_stock_id":"stock","camera_id":"camera","iso":"400","frame_count":36,"status":"Shooting","loaded_at":"test","created_at":"test","updated_at":"test","is_public":true}';
+  fields jsonb := '{"name":"test","film_stock_id":"stock","camera_id":"camera","iso":"400","frame_count":36,"status":"Shooting","loaded_at":"2026-01-01","created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z","is_public":true}';
 BEGIN
   SELECT * INTO f FROM deletion_fixture;
   result := public.guarded_roll_write(f.roll_id, NULL, fields);
