@@ -2,21 +2,38 @@
 
 A mobile-first app for film photographers to track rolls, log individual exposures, manage gear, and import scans — with cloud sync across devices via Supabase.
 
+> **Upgrading from the paused build?** Run `supabase/13`–`18` (see [Supabase Setup](#supabase-setup)), then reload the web app and restart Expo Go on every device. Rolls and frames then sync with conflict protection; Settings → Sync shows status and anything that needs your choice.
+
 ---
 
 ## Features
 
-- **Roll tracking** — log every roll from purchase through development across five statuses: Stock → Shooting → At Lab → Developed → Archived
+- **Roll tracking** — log every roll from purchase through development across the statuses Shooting → To Develop → In Development / In Lab → In Scanning → Archived
+- **Roll names** — optional names are labels, not identifiers. The app warns about an existing name (ignoring case and surrounding spaces) when creating or editing a roll, but allows separate rolls to share it. The warning reflects rolls currently on the device; it is not a cloud-wide uniqueness guarantee.
 - **Frame logging** — record shutter speed, aperture, lighting condition, subject, notes, location, timestamp, flash used, filter (UV/polarizer/ND/colour), weather condition, star rating, and free-form tags per frame
 - **Quick log** — tap ⚡ to instantly log a frame with GPS only; fill in the rest after developing
 - **Development records** — track developer, dilution, dev time, dev temperature, push/pull stops, fixer, and Photo-Flo per roll
-- **Scan attachment** — attach individual scans to frames via image picker, or bulk-import a ZIP of scans with automatic filename-to-frame assignment (reassignable before upload)
-- **Film strip view** — visualise a roll as a film negative strip with brand-specific border colours, sprocket holes, and landscape 3:2 exposures; tap any frame to open it
-- **GPS & location** — auto-captures GPS coordinates when logging a frame (if permitted); manual text location with geocoding (address → lat/lng); Shot Map pins all frames on a map
+- **Scan attachment** — attach a scan to a frame, or bulk-import a ZIP or a photo selection; files go to the Supabase `scans` bucket.
+- **Backfill scans** — when an import has more photos than logged frames, the missing frames are created for you.
+- **Scan import progress** — bulk uploads show the current file, elapsed wait, number of scans processed, and any failures; the bar advances per file, not by transferred bytes. Elapsed time does not confirm the connection is active. Keep the import screen open and verify the frame attachments on another device before deleting originals.
+- **Scan import filenames** — selected files with matching names are assigned independently. On native, ZIP images in different folders can have the same basename without overwriting each other.
+- **Film strip view** — visualise a roll as a film negative strip with sprocket holes; portrait scans rotate 90° clockwise to fit the landscape strip, while landscape and square scans stay upright. Images fit without cropping. The rotation is only a strip preview; saved scans and the opened image are unchanged. Tap any frame to open it.
+- **Scan preview orientation** — the frame editor sizes the preview using the loaded image's dimensions; portrait, square and landscape scans fit without cropping. Rotation controls are temporary preview adjustments and do not modify saved scans or exports.
+- **GPS & location** — auto-captures GPS coordinates when logging a frame (if permitted); manual text location with geocoding (address → lat/lng); Shot Map (a Map view on the Journal tab) pins all frames on a map
 - **Location journals** — every unique location label becomes a journal entry: write notes about the place, browse all frames shot there in a chronological timeline; serves as a living trip report
 - **Gear management** — manage cameras and film stocks; 17 stocks and 3 cameras included by default, add your own
+- **Film inventory** — log film purchases (stock, quantity, price, expiry), see what is expired, and load a roll straight from the inventory. Loading expired film suggests extra exposure (about +1 stop per decade, adjusted for storage, speed and slide film), and development treats that as box speed rather than a pull
+- **Lab drop-offs** — drop several rolls at a lab at once, choosing per roll whether the lab develops, scans or both; record cost and pick-up
+- **Development calculator** — times for B&W (38 developer/film recipes), C-41, E-6 and ECN-2, with push/pull, temperature compensation and a step-by-step process list; save the result to a roll
+- **Chemical sets & batches** — on the Develop tab, track shelf life and capacity of mixed chemistry and develop a batch of rolls at once; the app suggests the time per roll and blocks mixes that can't share a tank (remjet with non-remjet, different processes, different push/pull)
+- **Scan backup check** — checks whether attached cloud scans respond to a HEAD request. Before deleting originals, export the scans and open the downloaded files to verify their contents; the check alone does not download them.
+- **Search & filters** — search rolls by name, film, camera and notes; filter by status, film stock, camera, location and date range
+- **Stats card & export** — this-month and all-time rolls, frames, most-shot stocks and spending; export rolls and frames to one spreadsheet (a sheet per roll, linked from a Rolls sheet), plus scan ZIPs with JPEG EXIF metadata
+- **Local snapshot export** — Settings or the signed-out login screen can export the current device's local data as JSON for safekeeping before sync changes. It may contain private notes, locations and account ID; keep it private. The snapshot contains scan references, not image files, and there is no in-app restore yet. Export scans separately and verify both files. Repeat on each device because their local data may differ.
+- **Conflict-safe roll sync** — rolls and frames sync between phone and web. Edits to different fields on two devices merge automatically; the same field changed differently on both is held back until you choose in Settings → Sync. Deletions sync too, and a roll changed elsewhere after you deleted it is restored instead of lost.
+- **Units** — choose °C/°F and km/mi; values are stored in Celsius and kilometers
 - **Stats & badges** — overview dashboard (rolls, frames, stocks, cameras, locations); badge system for milestones and achievements
-- **Cloud sync** — sign in with email to sync all data across devices via Supabase; works fully offline and syncs on login
+- **Cloud sync** — rolls and frames use revision-checked sync (above); other data (inventory, drop-offs, chemical sets, batches, gear, journals) uses simple last-write-wins sync.
 - **Password security** — signup enforces min 8 chars, uppercase, number, and symbol with a live strength indicator; forgot/reset password flow via email link
 - **Web + mobile** — runs in browser (Expo web) and on iOS/Android
 
@@ -26,15 +43,14 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 
 | Layer | Tool |
 |---|---|
-| Framework | React Native + Expo SDK 55 |
+| Framework | React Native + Expo SDK 58 |
 | Routing | Expo Router (file-based) |
 | Language | TypeScript |
 | State | Zustand + AsyncStorage (offline-first) |
 | Backend | Supabase (auth, PostgreSQL, storage) |
 | Maps | react-native-maps |
 | Location | expo-location + Nominatim (web geocoding) |
-| Web zip import | fflate |
-| Native zip import | react-native-zip-archive |
+| Zip import | fflate (web and native) |
 
 ---
 
@@ -44,7 +60,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 
 ```bash
 cd filmlog
-npm install --legacy-peer-deps
+npm install
 ```
 
 ### 2. Add Supabase credentials
@@ -85,8 +101,33 @@ Run everything below in Supabase Dashboard → SQL Editor, **in this order**:
 4. [`supabase/03_walk_edit_policies.sql`](supabase/03_walk_edit_policies.sql)
 5. [`supabase/04_roll_visibility.sql`](supabase/04_roll_visibility.sql)
 6. [`supabase/05_profiles_avatars.sql`](supabase/05_profiles_avatars.sql): profiles table + public `avatars` bucket
+7. [`supabase/06_security_hardening.sql`](supabase/06_security_hardening.sql): private profiles, walk policy cleanup, counter triggers (required)
+8. [`supabase/07_film_purchases.sql`](supabase/07_film_purchases.sql): film inventory
+9. [`supabase/08_lab_dropoffs.sql`](supabase/08_lab_dropoffs.sql): lab drop-offs and roll status details
+10. [`supabase/09_scan_backup.sql`](supabase/09_scan_backup.sql): scan backup confirmation
+11. [`supabase/10_chemical_sets_batches.sql`](supabase/10_chemical_sets_batches.sql): chemical sets and development batches
+12. [`supabase/11_roll_realtime.sql`](supabase/11_roll_realtime.sql): Realtime notifications for new rolls
+13. [`supabase/12_shot_metadata_columns.sql`](supabase/12_shot_metadata_columns.sql): ensure optional frame metadata columns exist
+14. [`supabase/13_roll_revision_tracking.sql`](supabase/13_roll_revision_tracking.sql), [`14_guarded_roll_writes.sql`](supabase/14_guarded_roll_writes.sql) and [`15_guarded_deletions.sql`](supabase/15_guarded_deletions.sql): conflict-safe roll/frame sync (run all three, in order)
+15. [`supabase/16_location_journals.sql`](supabase/16_location_journals.sql): location journals table
+16. [`supabase/17_batch_details.sql`](supabase/17_batch_details.sql): fixer, wetting agent and solution volume on batches; minimum concentrate on chemical sets
+17. [`supabase/18_frame_realtime.sql`](supabase/18_frame_realtime.sql): live frame updates across devices
+18. [`supabase/19_film_stock_process.sql`](supabase/19_film_stock_process.sql): development process (B&W, C-41, E-6, ECN-2) on custom film stocks
+19. [`supabase/20_roll_expiry.sql`](supabase/20_roll_expiry.sql): film expiry date and extra exposure for age on rolls (rolls with these details stay on the device until it runs)
 
 On a fresh project, skip the *Phase 8* walk block in **Migrations** and the walk policies in **RLS**: `01_walks.sql` replaces them with stricter policies. See [ARCHITECTURE.md §8](ARCHITECTURE.md#8-security-model--known-limitations).
+
+### Roll sync
+
+Rolls and frames sync through revision-checked database functions instead of direct table writes:
+
+- Every roll and frame row has a `sync_revision` that the database bumps on each write (13).
+- Clients can't write `rolls`/`shots` directly. They call `guarded_roll_write` / `guarded_shot_write`, which only save if the caller's expected revision still matches (14). An out-of-date app gets a permission error instead of overwriting newer data, so reload every device after running 14.
+- Deletes are revision-checked too, and leave hidden tombstones so other devices learn about them (15).
+
+The app keeps, per roll and frame, the cloud version it last synced. It pushes only what changed locally and merges cloud changes field by field (see `src/utils/rollMerge.ts`). The first sync after upgrading compares each device's copy with the cloud: values missing on one side are filled from the other, and real differences appear in Settings → Sync for you to choose. Back up the database (or export a local snapshot on each device) before running 13–15.
+
+SQL tests for 13–15 are in [`supabase/tests/`](supabase/tests/). They need a disposable project with two users and roll back their changes.
 
 ### Database tables
 
@@ -328,10 +369,14 @@ filmlog/
 ├── app/
 │   ├── (tabs)/
 │   │   ├── index.tsx           # Rolls list (home)
-│   │   ├── map.tsx             # Global map tab
-│   │   ├── journal.tsx         # Location journals tab
+│   │   ├── inventory.tsx       # Film Stash (inventory)
+│   │   ├── develop.tsx         # Develop tab: chemical sets, batches, calculator link
+│   │   ├── journal.tsx         # Location journals tab (List / Map toggle)
 │   │   ├── walks.tsx           # Photo walks tab (My / Community / Recommended)
 │   │   └── settings.tsx        # Settings tab
+│   ├── calculator.tsx          # Development calculator
+│   ├── batch/
+│   │   └── new.tsx             # Develop a batch of rolls
 │   ├── auth/
 │   │   ├── login.tsx           # Sign in + forgot password
 │   │   ├── signup.tsx          # Create account
@@ -355,7 +400,10 @@ filmlog/
 │   └── _layout.tsx             # Root layout, session bootstrap, auth gate, Realtime
 ├── src/
 │   ├── components/
-│   │   └── BadgeToast.tsx      # Badge / notification toasts
+│   │   ├── BadgeToast.tsx      # Badge / notification toasts
+│   │   ├── Dropdown.tsx        # Shared dropdown
+│   │   ├── LabDropoffModal.tsx # Lab drop-off form
+│   │   └── ShotMap.tsx         # Map of shot locations
 │   ├── constants/              # COLORS theme, default gear, film stocks, filter/weather options, badges
 │   ├── mocks/                  # Web stubs for native-only packages
 │   ├── services/
@@ -366,9 +414,17 @@ filmlog/
 │   │   └── index.ts            # TypeScript interfaces
 │   └── utils/
 │       ├── index.ts            # uid, formatDate, rollProgress, validators
-│       └── badges.ts           # Badge stats + notification engine
+│       ├── badges.ts           # Badge stats + notification engine
+│       ├── devCalc.ts          # Development time calculator
+│       ├── chemistry.ts        # Shelf-life/capacity checks, batch mapping
+│       ├── summary.ts          # This-month / all-time stats
+│       ├── rollFilter.ts       # Roll search and filters
+│       ├── exportXlsx.ts       # Roll/frame spreadsheet export
+│       ├── exportFiles.ts      # Platform-specific save/share helpers
+│       ├── exportZip.ts        # Scan archive and JPEG EXIF metadata
+│       └── units.ts            # Metric storage and display conversions
 ├── supabase/                   # Incremental SQL scripts (run in numeric order)
-├── metro.config.js             # Stubs react-native-maps, zip-archive, share on web
+├── metro.config.js             # Stubs react-native-maps on web
 ├── .env.example                # Required environment variables
 ├── ARCHITECTURE.md             # System design & data flow
 └── package.json
@@ -393,7 +449,7 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 
 ## Roadmap
 
-> **v1 target:** see [MVP.md](MVP.md) for what remains before the web app counts as finished (security fixes, deployment, config, and Phase 9), plus the acceptance demo.
+> **v1 target:** see [MVP.md](MVP.md) for the v1 scope (development workflow, inventory, lab drop-offs, mobile), what is built so far, and the build order.
 
 | Phase | Status | Description |
 |---|---|---|
@@ -407,7 +463,7 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 | 8 — Photo / Art Walks | ✅ Done | Curated walking routes for photographers: personal walks (private, saved to profile), community walks (public, discoverable by city), and recommended/featured walks; stop-by-stop waypoints with location description and shooting tips; completion tracking; star ratings and short reviews; Shot Map overlay showing the walk route; auto-link stops to Location Journals; 4 new walk-specific badges (First Walk, Walker ×5, Trail Blazer, Walk Critic) |
 | 9 — Public Profiles | 🚧 In progress | Opt-in public photographer profile. **Done:** handle, display name, bio, avatar upload, public/private toggle, public rolls, public walks (`supabase/04`, `05`). **Remaining:** badges and stats on the profile, completed walks, curated favourite shots, full technical cards per frame |
 | 10 — AI Film Advisor | 🔜 Planned | Context-aware chatbot using the user's roll history: stock recommendations, exposure guidance, home dev walkthrough, pattern analysis, troubleshooting |
-| 11 — Sharing & Export | 🔜 Planned | Share journals, rolls, and shots via share sheet; optional EXIF embedding (camera, ISO, shutter, aperture, GPS, timestamp) written back into scan files before export — user toggle in Settings |
+| 11 — Sharing & Export | 🚧 In progress | **Done:** spreadsheet export of rolls and frames; ZIP export of scans with JPEG EXIF metadata. **Remaining:** share journals, rolls and shots via share sheet |
 | Auth Polish | 🔜 Planned | Google/Yahoo OAuth, custom Supabase email templates |
 
 ---
@@ -419,8 +475,9 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 - Frame count reductions must go through `validateFrameCountChange()` in `src/utils/index.ts`
 - Only the last logged frame can be deleted (film can't be un-exposed)
 - `Alert.alert` does not work on web — use inline confirm state pattern instead
-- Scan attachment is gated to rolls with status At Lab, Developed, or Archived
-- `react-native-maps` and `react-native-zip-archive` are stubbed on web via `metro.config.js`
+- Calculator reference data in `src/constants/devData.generated.ts` is generated from a workbook; edit the generator, not the file
+- Run the unit tests with `npm test`
+- `react-native-maps` is stubbed on web via `metro.config.js`
 - Supabase processes password-reset tokens before React mounts on web — the reset screen uses both `getSession()` and `onAuthStateChange` in parallel to handle the race condition
 - Tags stored in DB as JSON string (`text` column); parse on hydration with try/catch guard
 - Badges are computed client-side from store data — no DB table required

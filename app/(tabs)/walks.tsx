@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { COLORS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { Walk } from "@/types";
+import { formatDistance } from "@/utils/units";
 
 type Section = "mine" | "community" | "recommended";
 
@@ -15,7 +16,7 @@ const DIFFICULTY_COLOR: Record<string, string> = {
   Challenging: COLORS.danger,
 };
 
-function WalkCard({ walk, isCompleted, onPress }: { walk: Walk; isCompleted: boolean; onPress: () => void }) {
+function WalkCard({ walk, isCompleted, onPress, distanceUnit }: { walk: Walk; isCompleted: boolean; onPress: () => void; distanceUnit: "km" | "mi" }) {
   return (
     <TouchableOpacity style={wc.card} onPress={onPress} activeOpacity={0.7}>
       <View style={wc.cardTop}>
@@ -37,7 +38,7 @@ function WalkCard({ walk, isCompleted, onPress }: { walk: Walk; isCompleted: boo
           <Text style={wc.meta}>{walk.estimatedMinutes} min</Text>
         )}
         {walk.distanceKm != null && (
-          <Text style={wc.meta}>{walk.distanceKm} km</Text>
+          <Text style={wc.meta}>{formatDistance(walk.distanceKm, distanceUnit)}</Text>
         )}
         <Text style={wc.meta}>{walk.stops.length} stops</Text>
         {walk.completionCount > 0 && (
@@ -63,7 +64,7 @@ function WalkCard({ walk, isCompleted, onPress }: { walk: Walk; isCompleted: boo
 
 export default function WalksScreen() {
   const router = useRouter();
-  const { personalWalks, communityWalks, completions, fetchCommunityWalks, user } = useFilmLogStore();
+  const { personalWalks, communityWalks, completions, fetchCommunityWalks, user, distanceUnit } = useFilmLogStore();
   const [section, setSection] = useState<Section>("mine");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -124,6 +125,7 @@ export default function WalksScreen() {
           <WalkCard
             walk={item}
             isCompleted={completedWalkIds.has(item.id)}
+            distanceUnit={distanceUnit}
             onPress={() => router.push({ pathname: "/walks/[id]", params: { id: item.id } })}
           />
         )}

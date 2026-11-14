@@ -6,6 +6,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { signIn, signOut, resetPassword } from "@/services/supabase";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
+import AuthScreen from "@/components/AuthScreen";
+import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked, unsyncedRollChanges } from "@/utils/accountSyncSafety";
+import { exportCurrentLocalSnapshot } from "@/utils/snapshotExport";
 
 function resetRedirectUrl() {
   if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -16,12 +19,13 @@ function resetRedirectUrl() {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { user, setUser, syncFromSupabase, uploadLocalToSupabase, clearUserData, clearAllData } = useFilmLogStore();
+  const { user, setUser, syncFromSupabase, uploadLocalToSupabase, clearUserData, clearAllData, authSafetyError } = useFilmLogStore();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null);
 
   const [forgotMode, setForgotMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -29,7 +33,7 @@ export default function LoginScreen() {
   // ── Logged-in view ──────────────────────────────────────────────────────────
   if (user) {
     return (
-      <View style={s.container}>
+      <AuthScreen>
         <Text style={s.sectionTitle}>Account</Text>
         <View style={s.card}>
           <Text style={s.label}>Signed in as</Text>
@@ -44,7 +48,7 @@ export default function LoginScreen() {
         >
           <Text style={s.signOutText}>Sign Out</Text>
         </TouchableOpacity>
-      </View>
+      </AuthScreen>
     );
   }
 
@@ -52,7 +56,7 @@ export default function LoginScreen() {
   if (forgotMode) {
     if (resetSent) {
       return (
-        <View style={s.container}>
+        <AuthScreen>
           <Text style={s.title}>Check your email</Text>
           <Text style={s.subtitle}>
             If an account exists with the email {email}, you should have received a password reset link. Please follow the link to choose a new password.
@@ -60,12 +64,12 @@ export default function LoginScreen() {
           <TouchableOpacity style={s.primaryBtn} onPress={() => { setForgotMode(false); setResetSent(false); }}>
             <Text style={s.primaryBtnText}>Back to Sign In</Text>
           </TouchableOpacity>
-        </View>
+        </AuthScreen>
       );
     }
 
     return (
-      <View style={s.container}>
+      <AuthScreen>
         <Text style={s.title}>Reset Password</Text>
         <Text style={s.subtitle}>Enter your email and we'll send you a reset link.</Text>
 
@@ -77,7 +81,7 @@ export default function LoginScreen() {
           value={email}
           onChangeText={setEmail}
           placeholder="you@example.com"
-          placeholderTextColor={COLORS.textDim}
+          placeholderTextColor={COLORS.textMuted}
           autoCapitalize="none"
           keyboardType="email-address"
           autoFocus
@@ -109,13 +113,14 @@ export default function LoginScreen() {
         <TouchableOpacity style={s.linkBtn} onPress={() => { setForgotMode(false); setError(null); }}>
           <Text style={s.linkText}>← Back to sign in</Text>
         </TouchableOpacity>
-      </View>
+      </AuthScreen>
     );
   }
 
   // ── Login form ──────────────────────────────────────────────────────────────
   async function handleLogin() {
     setError(null);
+    useFilmLogStore.setState({ authSafetyError: null });
     if (!email.trim() || !password.trim()) {
       setError("Email and password are required.");
       return;
@@ -126,7 +131,10 @@ export default function LoginScreen() {
       const sbUser = data.user;
       if (sbUser) {
         const storedUserId = await AsyncStorage.getItem("filmlog:userId");
-        setUser({ id: sbUser.id, email: sbUser.email ?? "" });
+        if (isAccountSwitchBlocked(storedUserId, sbUser.id, useFilmLogStore.getState())) {
+          await signOut();
+          throw new Error(ACCOUNT_SWITCH_BLOCKED_MESSAGE);
+        }
         if (storedUserId && storedUserId !== sbUser.id) {
           // Different account on this device — wipe local rolls so they don't bleed in
           clearAllData();
@@ -134,6 +142,7 @@ export default function LoginScreen() {
           // Same user (or first sign-in) — push any local rolls to Supabase first
           await uploadLocalToSupabase(sbUser.id);
         }
+        setUser({ id: sbUser.id, email: sbUser.email ?? "" });
         await syncFromSupabase(sbUser.id);
       }
       router.replace("/(tabs)");
@@ -145,11 +154,26 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={s.container}>
+    <AuthScreen>
       <Text style={s.title}>Film Log</Text>
       <Text style={s.subtitle}>Sign in to sync across devices</Text>
 
-      {error && <Text style={s.error}>{error}</Text>}
+      {(error || authSafetyError) && <Text style={s.error}>{error || authSafetyError}</Text>}
+      {unsyncedRollChanges(useFilmLogStore.getState()) > 0 && (
+        <TouchableOpacity style={s.linkBtn} onPress={async () => {
+          setSnapshotMessage(null);
+          try {
+            await exportCurrentLocalSnapshot();
+            setSnapshotMessage("Download or share opened. Confirm the snapshot was saved.");
+          } catch (snapshotError) {
+            console.error("Local snapshot export failed:", snapshotError);
+            setSnapshotMessage(`Snapshot failed: ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}`);
+          }
+        }}>
+          <Text style={s.linkText}>Export local snapshot before signing in</Text>
+        </TouchableOpacity>
+      )}
+      {snapshotMessage && <Text style={s.subtitle}>{snapshotMessage}</Text>}
 
       <Text style={s.label}>Email</Text>
       <TextInput
@@ -157,7 +181,7 @@ export default function LoginScreen() {
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         autoCapitalize="none"
         keyboardType="email-address"
       />
@@ -168,7 +192,7 @@ export default function LoginScreen() {
         value={password}
         onChangeText={setPassword}
         placeholder="••••••••"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         secureTextEntry
       />
 
@@ -186,24 +210,23 @@ export default function LoginScreen() {
       <TouchableOpacity style={s.linkBtn} onPress={() => router.push("/auth/signup")}>
         <Text style={s.linkText}>No account? Create one →</Text>
       </TouchableOpacity>
-    </View>
+    </AuthScreen>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, justifyContent: "center" },
   title: { fontSize: 22, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 4, textTransform: "uppercase", marginBottom: 4 },
-  subtitle: { fontSize: 11, color: COLORS.textDim, fontFamily: "Courier New", marginBottom: 32, lineHeight: 18 },
-  sectionTitle: { fontSize: 9, color: COLORS.amber, letterSpacing: 3, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 20, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  label: { fontSize: 9, color: COLORS.textMuted, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 16 },
-  input: { backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 13, paddingHorizontal: 12, paddingVertical: 10 },
-  primaryBtn: { marginTop: 24, backgroundColor: COLORS.amber, paddingVertical: 14, alignItems: "center" },
-  primaryBtnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" },
-  linkBtn: { marginTop: 14, alignItems: "center" },
-  linkText: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New" },
-  error: { fontSize: 11, color: COLORS.danger, fontFamily: "Courier New", marginBottom: 8, lineHeight: 18 },
+  subtitle: { fontSize: 15, color: COLORS.textMuted, fontFamily: "Courier New", marginBottom: 24, lineHeight: 22 },
+  sectionTitle: { fontSize: 14, color: COLORS.amberLight, letterSpacing: 2, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 20, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  label: { fontSize: 14, color: COLORS.textSecondary, letterSpacing: 1, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 16 },
+  input: { backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 16, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10 },
+  primaryBtn: { marginTop: 24, minHeight: 48, backgroundColor: COLORS.amber, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  primaryBtnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 15, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" },
+  linkBtn: { marginTop: 8, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  linkText: { fontSize: 15, color: COLORS.textSecondary, fontFamily: "Courier New" },
+  error: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New", marginBottom: 8, lineHeight: 20 },
   card: { backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 24 },
-  email: { fontSize: 13, color: COLORS.textPrimary, fontFamily: "Courier New", marginTop: 4 },
-  signOutBtn: { borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 12, alignItems: "center" },
-  signOutText: { fontSize: 11, color: COLORS.danger, fontFamily: "Courier New", letterSpacing: 2, textTransform: "uppercase" },
+  email: { fontSize: 16, color: COLORS.textPrimary, fontFamily: "Courier New", marginTop: 4 },
+  signOutBtn: { minHeight: 48, borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  signOutText: { fontSize: 15, color: "#ff9588", fontFamily: "Courier New", letterSpacing: 1, textTransform: "uppercase" },
 });

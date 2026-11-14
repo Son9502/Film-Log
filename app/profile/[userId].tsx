@@ -4,7 +4,7 @@ import {
 } from "react-native";
 import { useEffect, useState } from "react";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { COLORS, MAX_STARS } from "@/constants";
+import { COLORS, MAX_STARS, SOCIAL_ENABLED, normalizeStatus } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { supabase } from "@/services/supabase";
 import { UserProfile, Walk, Roll } from "@/types";
@@ -46,7 +46,7 @@ function dbToRollBasic(row: any): Roll {
     cameraId: row.camera_id,
     iso: row.iso,
     frameCount: row.frame_count,
-    status: row.status,
+    status: normalizeStatus(row.status),
     loadedAt: row.loaded_at,
     shots: [],
     isPublic: true,
@@ -207,8 +207,9 @@ export default function PublicProfileScreen() {
               {[
                 [ownRollCount, "rolls"],
                 [ownFrameCount, "frames"],
-                [ownCompletionCount, "walks done"],
-                [ownWalkCount, "walks shared"],
+                ...(SOCIAL_ENABLED
+                  ? [[ownCompletionCount, "walks done"], [ownWalkCount, "walks shared"]]
+                  : []),
               ].map(([n, lbl]) => (
                 <View key={String(lbl)} style={s.statCell}>
                   <Text style={s.statNum}>{n}</Text>
@@ -254,6 +255,8 @@ export default function PublicProfileScreen() {
         )}
 
         {/* Public Walks */}
+        {SOCIAL_ENABLED && (
+          <>
         <Text style={[s.sectionLabel, { marginTop: 24 }]}>
           {isOwnProfile ? "My Public Walks" : "Walks"}
         </Text>
@@ -302,6 +305,8 @@ export default function PublicProfileScreen() {
                 </View>
               </TouchableOpacity>
             ))}
+          </>
+        )}
           </>
         )}
 

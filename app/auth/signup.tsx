@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { signUp } from "@/services/supabase";
+import { signOut, signUp } from "@/services/supabase";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
+import AuthScreen from "@/components/AuthScreen";
+import { backOrReplace } from "@/utils/navigation";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked } from "@/utils/accountSyncSafety";
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8)          return "At least 8 characters required.";
@@ -22,10 +26,10 @@ function passwordStrength(pw: string): { score: number; label: string; color: st
   if (/[^A-Za-z0-9]/.test(pw))  score++;
   const levels = [
     { label: "",         color: COLORS.border },
-    { label: "Weak",     color: COLORS.danger },
-    { label: "Fair",     color: "#b86b0b" },
+    { label: "Weak",     color: "#ff9588" },
+    { label: "Fair",     color: "#e5aa5e" },
     { label: "Good",     color: COLORS.amberLight },
-    { label: "Strong",   color: COLORS.success },
+    { label: "Strong",   color: "#87c987" },
   ];
   return { score, ...levels[score] };
 }
@@ -60,6 +64,11 @@ export default function SignupScreen() {
       const data = await signUp(email.trim(), password.trim());
       const sbUser = data.user;
       if (sbUser) {
+        const storedUserId = await AsyncStorage.getItem("filmlog:userId");
+        if (isAccountSwitchBlocked(storedUserId, sbUser.id, useFilmLogStore.getState())) {
+          if (data.session) await signOut();
+          throw new Error(ACCOUNT_SWITCH_BLOCKED_MESSAGE);
+        }
         setUser({ id: sbUser.id, email: sbUser.email ?? "" });
         await uploadLocalToSupabase(sbUser.id);
         router.replace("/(tabs)");
@@ -75,7 +84,7 @@ export default function SignupScreen() {
 
   if (success) {
     return (
-      <View style={s.container}>
+      <AuthScreen>
         <Text style={s.title}>Almost there!</Text>
         <Text style={s.subtitle}>
           We sent a confirmation link to {email}.{"\n\n"}
@@ -84,12 +93,12 @@ export default function SignupScreen() {
         <TouchableOpacity style={s.primaryBtn} onPress={() => router.replace("/auth/login")}>
           <Text style={s.primaryBtnText}>Go to Sign In</Text>
         </TouchableOpacity>
-      </View>
+      </AuthScreen>
     );
   }
 
   return (
-    <View style={s.container}>
+    <AuthScreen>
       <Text style={s.title}>Create Account</Text>
       <Text style={s.subtitle}>Your data syncs across all your devices</Text>
 
@@ -101,7 +110,7 @@ export default function SignupScreen() {
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         autoCapitalize="none"
         keyboardType="email-address"
       />
@@ -112,7 +121,7 @@ export default function SignupScreen() {
         value={password}
         onChangeText={setPassword}
         placeholder="Min. 8 chars, uppercase, number, symbol"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         secureTextEntry
       />
 
@@ -132,7 +141,7 @@ export default function SignupScreen() {
         value={confirm}
         onChangeText={setConfirm}
         placeholder="••••••••"
-        placeholderTextColor={COLORS.textDim}
+        placeholderTextColor={COLORS.textMuted}
         secureTextEntry
       />
 
@@ -143,26 +152,25 @@ export default function SignupScreen() {
         }
       </TouchableOpacity>
 
-      <TouchableOpacity style={s.linkBtn} onPress={() => router.back()}>
+      <TouchableOpacity style={s.linkBtn} onPress={() => backOrReplace(router, "/auth/login")}>
         <Text style={s.linkText}>Already have an account? Sign in →</Text>
       </TouchableOpacity>
-    </View>
+    </AuthScreen>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, justifyContent: "center" },
   title: { fontSize: 22, color: COLORS.amber, fontFamily: "Courier New", letterSpacing: 4, textTransform: "uppercase", marginBottom: 4 },
-  subtitle: { fontSize: 11, color: COLORS.textDim, fontFamily: "Courier New", marginBottom: 32, lineHeight: 18 },
-  label: { fontSize: 9, color: COLORS.textMuted, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 16 },
-  input: { backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 13, paddingHorizontal: 12, paddingVertical: 10 },
+  subtitle: { fontSize: 15, color: COLORS.textMuted, fontFamily: "Courier New", marginBottom: 24, lineHeight: 22 },
+  label: { fontSize: 14, color: COLORS.textSecondary, letterSpacing: 1, textTransform: "uppercase", fontFamily: "Courier New", marginBottom: 6, marginTop: 16 },
+  input: { backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border, color: COLORS.textPrimary, fontFamily: "Courier New", fontSize: 16, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10 },
   strengthRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 },
   strengthBarBg: { flex: 1, height: 3, backgroundColor: COLORS.border },
   strengthBarFill: { height: "100%" },
-  strengthLabel: { fontSize: 9, fontFamily: "Courier New", letterSpacing: 1, width: 44, textAlign: "right" },
-  primaryBtn: { marginTop: 24, backgroundColor: COLORS.amber, paddingVertical: 14, alignItems: "center" },
-  primaryBtnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" },
-  linkBtn: { marginTop: 16, alignItems: "center" },
-  linkText: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New" },
-  error: { fontSize: 11, color: COLORS.danger, fontFamily: "Courier New", marginBottom: 8, lineHeight: 18 },
+  strengthLabel: { fontSize: 13, fontFamily: "Courier New", width: 60, textAlign: "right" },
+  primaryBtn: { marginTop: 24, minHeight: 48, backgroundColor: COLORS.amber, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  primaryBtnText: { color: COLORS.bg, fontFamily: "Courier New", fontSize: 15, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" },
+  linkBtn: { marginTop: 8, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  linkText: { fontSize: 15, color: COLORS.textSecondary, fontFamily: "Courier New", textAlign: "center" },
+  error: { fontSize: 14, color: "#ff9588", fontFamily: "Courier New", marginBottom: 8, lineHeight: 20 },
 });

@@ -1,11 +1,19 @@
 import { View, Text, ScrollView, StyleSheet } from "react-native";
-import { useMemo } from "react";
-import { COLORS, BADGES } from "@/constants";
+import { useMemo, useState } from "react";
+import { TouchableOpacity } from "react-native";
+import { monthSummary } from "@/utils/summary";
+import { COLORS, BADGES, SOCIAL_ENABLED } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { computeBadgeStats } from "@/utils/badges";
 
 export default function StatsScreen() {
-  const { rolls, personalWalks, completions, myReviews, user } = useFilmLogStore();
+  const { rolls, personalWalks, completions, myReviews, user, purchases, dropoffs, filmStocks } = useFilmLogStore();
+  const [scope, setScope] = useState<"month" | "all">("month");
+  const summary = useMemo(
+    () => monthSummary(rolls, purchases, dropoffs, filmStocks, new Date(), scope),
+    [rolls, purchases, dropoffs, filmStocks, scope]
+  );
+  const money = (n: number) => `$${n.toFixed(2)}`;
 
   const stats = useMemo(
     () => computeBadgeStats(rolls, personalWalks, completions, myReviews, user?.id),
@@ -30,13 +38,46 @@ export default function StatsScreen() {
     { label: "Weather Conditions", value: `${stats.weatherTypesUsed} / 7` },
     { label: "Self-Developed Rolls", value: stats.developedRolls },
     { label: "Push-Processed Rolls", value: stats.pushedRolls },
-    { label: "Walks Completed", value: stats.completedWalks },
-    { label: "Walks Rated", value: stats.walksRated },
+    ...(SOCIAL_ENABLED
+      ? [
+          { label: "Walks Completed", value: stats.completedWalks },
+          { label: "Walks Rated", value: stats.walksRated },
+        ]
+      : []),
     { label: "Badges Earned", value: `${earnedCount} / ${BADGES.length}` },
   ];
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+        {(["month", "all"] as const).map((k) => (
+          <TouchableOpacity
+            key={k}
+            style={[s.scopeBtn, scope === k && s.scopeBtnOn]}
+            onPress={() => setScope(k)}
+          >
+            <Text style={[s.scopeText, scope === k && { color: COLORS.amber }]}>
+              {k === "month" ? "This month" : "All time"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={[s.statsCard, { marginBottom: 28 }]}>
+        {[
+          ["Rolls loaded", String(summary.rollsLoaded)],
+          ["Frames shot", String(summary.framesShot)],
+          ["Film spend", money(summary.filmSpend)],
+          ["Lab spend", money(summary.labSpend)],
+          ["Total spend", money(summary.totalSpend)],
+          ["Most-shot stocks", summary.topStocks.map((t) => `${t.name} ×${t.rolls}`).join("\n") || "—"],
+        ].map(([label, value], i, arr) => (
+          <View key={label} style={[s.statRow, i < arr.length - 1 && s.statRowBorder]}>
+            <Text style={s.statLabel}>{label}</Text>
+            <Text style={[s.statValue, { textAlign: "right", flexShrink: 1 }]}>{value}</Text>
+          </View>
+        ))}
+      </View>
+
       {/* Overview */}
       <Text style={s.sectionLabel}>Overview</Text>
       <View style={s.statsCard}>
@@ -78,6 +119,9 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: 20, paddingBottom: 40 },
 
+  scopeBtn: { flex: 1, alignItems: "center", paddingVertical: 8, borderWidth: 1, borderColor: COLORS.border },
+  scopeBtnOn: { borderColor: COLORS.amber, backgroundColor: COLORS.bgCard },
+  scopeText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 2, textTransform: "uppercase" },
   sectionLabel: {
     fontSize: 9, color: COLORS.amber, letterSpacing: 3,
     textTransform: "uppercase", fontFamily: "Courier New",

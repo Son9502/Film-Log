@@ -2,11 +2,11 @@ import { Camera, FilmStock } from "@/types";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 export const COLORS = {
-  bg: "#0d0d0d",
-  bgCard: "#111111",
-  bgElevated: "#1a1a1a",
-  border: "#2a2a2a",
-  borderSubtle: "#1e1e1e",
+  bg: "#101820",
+  bgCard: "#19242d",
+  bgElevated: "#24333e",
+  border: "#52616b",
+  borderSubtle: "#364651",
 
   amber: "#b8860b",
   amberLight: "#d4a017",
@@ -14,8 +14,8 @@ export const COLORS = {
 
   textPrimary: "#f0e6d0",
   textSecondary: "#e8dcc8",
-  textMuted: "#888888",
-  textDim: "#555555",
+  textMuted: "#c0cbd0",
+  textDim: "#adbac1",
 
   danger: "#8b3030",
   success: "#4a8a4a",
@@ -27,30 +27,38 @@ export const FONTS = {
 };
 
 // ── Default Gear ─────────────────────────────────────────────────────────────
+/** Used for a roll logged without choosing a camera. */
+export const UNKNOWN_CAMERA_ID = "other";
+
+/**
+ * Cameras built into earlier versions. They stay so rolls that use them keep their
+ * name, but pickers only offer one once a roll uses it (see `pickableCameras`), so
+ * new accounts start with no cameras and add their own.
+ */
 export const DEFAULT_CAMERAS: Camera[] = [
   { id: "nikon-fe", name: "Nikon FE", isCustom: false },
   { id: "nikon-l35ad2", name: "Nikon L35AD2", isCustom: false },
-  { id: "other", name: "Other", isCustom: false },
+  { id: UNKNOWN_CAMERA_ID, name: "Unknown camera", isCustom: false },
 ];
 
 export const DEFAULT_FILM_STOCKS: FilmStock[] = [
-  { id: "portra-160", name: "Kodak Portra 160", iso: 160, isCustom: false },
-  { id: "portra-400", name: "Kodak Portra 400", iso: 400, isCustom: false },
-  { id: "portra-800", name: "Kodak Portra 800", iso: 800, isCustom: false },
-  { id: "gold-200", name: "Kodak Gold 200", iso: 200, isCustom: false },
-  { id: "colorplus-200", name: "Kodak ColorPlus 200", iso: 200, isCustom: false },
-  { id: "ektar-100", name: "Kodak Ektar 100", iso: 100, isCustom: false },
-  { id: "ultramax-400", name: "Kodak UltraMax 400", iso: 400, isCustom: false },
-  { id: "fuji-superia-400", name: "Fuji Superia 400", iso: 400, isCustom: false },
-  { id: "fuji-pro-400h", name: "Fuji Pro 400H", iso: 400, isCustom: false },
-  { id: "velvia-50", name: "Fuji Velvia 50", iso: 50, isCustom: false },
-  { id: "provia-100f", name: "Fuji Provia 100F", iso: 100, isCustom: false },
-  { id: "hp5-plus", name: "Ilford HP5 Plus", iso: 400, isCustom: false },
-  { id: "delta-100", name: "Ilford Delta 100", iso: 100, isCustom: false },
-  { id: "delta-3200", name: "Ilford Delta 3200", iso: 3200, isCustom: false },
-  { id: "fp4-plus", name: "Ilford FP4 Plus", iso: 125, isCustom: false },
-  { id: "trix-400", name: "Kodak Tri-X 400", iso: 400, isCustom: false },
-  { id: "rpx-400", name: "Rollei RPX 400", iso: 400, isCustom: false },
+  { id: "portra-160", name: "Kodak Portra 160", iso: 160, isCustom: false, process: "C-41" },
+  { id: "portra-400", name: "Kodak Portra 400", iso: 400, isCustom: false, process: "C-41" },
+  { id: "portra-800", name: "Kodak Portra 800", iso: 800, isCustom: false, process: "C-41" },
+  { id: "gold-200", name: "Kodak Gold 200", iso: 200, isCustom: false, process: "C-41" },
+  { id: "colorplus-200", name: "Kodak ColorPlus 200", iso: 200, isCustom: false, process: "C-41" },
+  { id: "ektar-100", name: "Kodak Ektar 100", iso: 100, isCustom: false, process: "C-41" },
+  { id: "ultramax-400", name: "Kodak UltraMax 400", iso: 400, isCustom: false, process: "C-41" },
+  { id: "fuji-superia-400", name: "Fuji Superia 400", iso: 400, isCustom: false, process: "C-41" },
+  { id: "fuji-pro-400h", name: "Fuji Pro 400H", iso: 400, isCustom: false, process: "C-41" },
+  { id: "velvia-50", name: "Fuji Velvia 50", iso: 50, isCustom: false, process: "E-6" },
+  { id: "provia-100f", name: "Fuji Provia 100F", iso: 100, isCustom: false, process: "E-6" },
+  { id: "hp5-plus", name: "Ilford HP5 Plus", iso: 400, isCustom: false, process: "B&W" },
+  { id: "delta-100", name: "Ilford Delta 100", iso: 100, isCustom: false, process: "B&W" },
+  { id: "delta-3200", name: "Ilford Delta 3200", iso: 3200, isCustom: false, process: "B&W" },
+  { id: "fp4-plus", name: "Ilford FP4 Plus", iso: 125, isCustom: false, process: "B&W" },
+  { id: "trix-400", name: "Kodak Tri-X 400", iso: 400, isCustom: false, process: "B&W" },
+  { id: "rpx-400", name: "Rollei RPX 400", iso: 400, isCustom: false, process: "B&W" },
 ];
 
 export const LIGHTING_CONDITIONS = [
@@ -74,12 +82,47 @@ export const WEATHER_CONDITIONS = [
 ];
 
 export const ROLL_STATUS_LIST = [
-  "Stock",
   "Shooting",
-  "At Lab",
-  "Developed",
+  "To Develop",
+  "In Development",
+  "In Lab",
+  "In Scanning",
   "Archived",
 ] as const;
+
+// Where a roll can go next. "To Develop" is the buffer between finishing a roll and
+// developing it. In Lab covers lab development, lab scanning, or both, so it can go to
+// In Scanning (you scan it) or straight to Archived (the lab scanned it).
+export const NEXT_STATUSES: Record<(typeof ROLL_STATUS_LIST)[number], (typeof ROLL_STATUS_LIST)[number][]> = {
+  Shooting: ["To Develop"],
+  "To Develop": ["In Development", "In Lab"],
+  "In Development": ["In Scanning", "In Lab"],
+  "In Lab": ["In Scanning", "Archived"],
+  "In Scanning": ["Archived"],
+  Archived: [],
+};
+
+export function statusActionLabel(from: string, to: string): string {
+  if (from === "Shooting" && to === "To Develop") return "Finish roll";
+  if (from === "To Develop" && to === "In Development") return "Develop myself";
+  if (from === "To Develop" && to === "In Lab") return "Send to lab";
+  if (from === "In Development" && to === "In Scanning") return "Scan myself";
+  if (from === "In Development" && to === "In Lab") return "Send to lab to scan";
+  if (from === "In Lab" && to === "In Scanning") return "Back from lab — I'll scan";
+  if (from === "In Lab" && to === "Archived") return "Lab scanned — archive";
+  if (to === "Archived") return "Archive";
+  return to;
+}
+
+// Maps statuses from before the inventory update onto the new flow.
+export function normalizeStatus(status: string): (typeof ROLL_STATUS_LIST)[number] {
+  if (status === "At Lab") return "In Lab";
+  if (status === "Developed") return "In Scanning";
+  if (status === "Stock") return "Shooting";
+  return (ROLL_STATUS_LIST as readonly string[]).includes(status)
+    ? (status as (typeof ROLL_STATUS_LIST)[number])
+    : "Shooting";
+}
 
 export const FRAME_COUNT_OPTIONS = [12, 24, 36];
 
@@ -133,7 +176,13 @@ export interface BadgeDef {
   }) => boolean;
 }
 
-export const BADGES: BadgeDef[] = [
+// v1 is a personal film log. Walks, public profiles and their badges are built but hidden
+// until v2; flip this to bring them back.
+export const SOCIAL_ENABLED = false;
+
+const WALK_BADGE_IDS = ["first_walk", "walker", "trail_blazer", "walk_critic"];
+
+const ALL_BADGES: BadgeDef[] = [
   // ── First steps ────────────────────────────────────────────────────────────
   {
     id: "first_frame",
@@ -374,3 +423,7 @@ export const BADGES: BadgeDef[] = [
     check: (s) => s.walksRated >= 5,
   },
 ];
+
+export const BADGES: BadgeDef[] = SOCIAL_ENABLED
+  ? ALL_BADGES
+  : ALL_BADGES.filter((b) => !WALK_BADGE_IDS.includes(b.id));

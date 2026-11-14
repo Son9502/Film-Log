@@ -55,15 +55,17 @@ flowchart LR
 filmlog/
 ├── app/                        # Expo Router — every file is a route
 │   ├── _layout.tsx             # Root stack, session bootstrap, auth gate, Realtime subscription
-│   ├── (tabs)/                 # Bottom tabs: Rolls, Map, Journal, Walks, Settings
+│   ├── (tabs)/                 # Bottom tabs: Rolls (search + filters), Film Stash (inventory), Develop (chemical sets, batches, calculator), Journal (list + map toggle), Settings; Walks is hidden in v1 (SOCIAL_ENABLED)
 │   ├── auth/                   # login, signup, reset-password
 │   ├── roll/                   # [id] detail, new, import (native) / import.web (web)
+│   ├── calculator.tsx          # Development calculator
+│   ├── batch/new.tsx           # Develop a batch of rolls
 │   ├── journal/[label].tsx     # Per-location journal + frame timeline
 │   ├── walks/                  # [id] detail, new (create/edit)
 │   ├── profile/[userId].tsx    # Public profile view
 │   └── settings/               # gear, profile, stats
 ├── src/
-│   ├── components/             # Shared UI (BadgeToast)
+│   ├── components/             # Shared UI (BadgeToast, Dropdown, LabDropoffModal, ShotMap)
 │   ├── constants/              # Theme, defaults, badge definitions
 │   ├── mocks/                  # *.web.js stubs for native-only packages
 │   ├── services/supabase.ts    # Supabase client + auth/storage helpers
@@ -86,14 +88,14 @@ The `@/*` path alias maps to `src/*` (see `tsconfig.json`).
 
 1. **Hydrate:** `hydrate()` loads every `filmlog:*` key from AsyncStorage into the store, so the UI is usable before any network call.
 2. **Restore session:** `supabase.auth.getSession()` is checked once.
-3. **Cross-account guard:** the last signed-in user ID is stored under `filmlog:userId`. If a *different* account signs in on the same device, `clearAllData()` wipes local data first so one user's rolls are never uploaded under another user's account.
-4. **Sync:** for the same user, `uploadLocalToSupabase()` pushes local data up (upsert), then `syncFromSupabase()` pulls remote data down and merges it.
+3. **Cross-account guard:** the last signed-in user ID is stored under `filmlog:userId`. Signing in as a different account clears this device's data first, but only once every roll/frame change made here has synced (`isAccountSwitchBlocked` in `src/utils/accountSyncSafety.ts`); otherwise the sign-in is refused. A device that has never signed in keeps its rolls and syncs them to the first account.
+4. **Sync:** for the same user, `uploadLocalToSupabase()` pushes non-roll data up, then `syncFromSupabase()` pulls it down and starts `runRollSync()` for rolls and frames (see §4).
 5. **Profile & Realtime:** `loadMyProfile()` runs, and `subscribeToCreatorNotifications()` opens Realtime channels while a user is signed in.
 6. **Auth gate:** after init, unauthenticated users are redirected to `/auth/login`, and authenticated users are redirected away from `/auth/*`.
 
 `onAuthStateChange` handles mid-session sign-ins and sign-outs using the same logic. It skips the initial event that `init()` already handled, so the app doesn't sync twice.
 
-**Sign-out** (`clearUserData`) clears the session, custom gear, and profile but **keeps rolls locally**. The same user gets them back immediately on re-login without waiting on the network.
+**Sign-out** (`clearUserData`) clears the active user, profile and custom gear but keeps rolls and their sync state, so the same user gets them back immediately on re-login.
 
 ---
 
@@ -110,20 +112,32 @@ computeBadgeNotifications → diff badge stats before/after, queue toasts
 if (user) supabase.…     → background insert/upsert/delete, errors logged only
 ```
 
-Remote writes are **fire-and-forget**. The only retry path is `addShot`: if its insert fails, it calls `uploadLocalToSupabase()` to upsert everything. Other failed writes are reconciled the next time the app starts or the user signs in.
+Remote writes for non-roll entities are **fire-and-forget** upserts. Rolls and frames instead call `scheduleRollSync()`, which runs the conflict-safe sync below.
+
+### Roll & frame sync
+
+Pure logic is in `src/utils/rollMerge.ts`, network calls in `src/services/rollSyncApi.ts`, and orchestration in the store's `runRollSync()`.
+
+- **Base per record.** `rollSyncMeta` stores, for every roll and frame this device has synced, the server `sync_revision` and field values it last agreed with the cloud. It's persisted under `filmlog:rollSyncMeta` with the owning user ID. There's no outbox: unsynced work is derived by comparing current data with the base, so it survives restarts and can't drift.
+- **Pull (atomic).** Fetch all of the user's rolls, shots (paginated past the 1,000-row cap) and tombstones, then `reconcile()` synchronously and commit, so no local edit can land mid-merge. For each record: cloud unchanged since the base → keep local; otherwise a three-way merge per field. Only a field changed differently on both sides is a conflict. `updated_at` takes the newest value and `created_at` the earliest. With no base (records that existed before this sync), an empty value on one side fills from the other.
+- **Push.** `pendingOps()` lists creates and updates (rolls before frames), then deletes (frames before rolls). Each one calls a guarded RPC with the base revision. On `saved` the base moves to exactly what was sent. On `conflict` the loop pulls again and re-merges, up to four rounds.
+- **Deletes.** Deleted here and unchanged in the cloud → guarded delete (tombstone). Deleted here but changed elsewhere → restored, with a notice. Deleted elsewhere and unchanged here → removed here. Deleted elsewhere but changed here → a conflict ("keep my copy" re-creates it under new IDs, because the old ID stays reserved by its tombstone).
+- **Conflicts** block only the affected record. They appear in Settings → Sync (`SyncPanel`), where you pick per field. The choice becomes a normal local edit on top of the cloud version.
+- **Scan files** are never deleted directly. When a guarded frame write that removes or replaces `scan_uri` succeeds (or a frame is deleted), sync removes the old file.
+- **Triggers.** Local mutations (debounced 1.5 s), Realtime changes on `rolls`/`shots` (18), a 60 s interval and returning to the foreground. Runs are single-flight; a change during a run queues another.
 
 ### Read / merge path (`syncFromSupabase`)
 
 | Entity | Merge rule |
 |---|---|
-| Rolls | Remote rolls win. Local-only rolls are kept. For rolls that exist in both places, local shots not yet present remotely are appended, so un-synced frames survive. |
+| Rolls | Three-way merge per field against the last-synced base; same-field edits on both sides become conflicts for the user (see Roll & frame sync). |
 | Cameras / film stocks | `DEFAULT_*` constants plus the user's custom rows from Supabase. |
 | Journals | Remote journals win, matched by **case-insensitive `locationLabel`**. Local-only labels are kept. |
 | Personal walks | Remote walks win, matched by ID. Local-only walks are kept. |
 | Completions / my reviews | Replaced by the remote set when the query succeeds. |
 | Community walks, walk reviews | Memory-only. Fetched on demand and never persisted. |
 
-There is no timestamp-based conflict resolution: remote rows overwrite local rows with the same ID.
+Apart from rolls and frames, there's no conflict resolution: remote rows overwrite local rows with the same ID.
 
 ### IDs & mapping
 
@@ -135,7 +149,7 @@ There is no timestamp-based conflict resolution: remote rows overwrite local row
 
 - **Walks** are stored locally for everyone, but are written to Supabase on create only when `isPublic` is true. Edits to an existing walk always upsert.
 - **Rolls** have an `is_public` flag. Public rolls and their shots can be read by any authenticated user (`supabase/04_roll_visibility.sql`).
-- **Profiles** are readable by any authenticated user. The `is_public` flag is enforced in the app, not by RLS (see §8).
+- **Profiles** are readable by other users only when `is_public` is true; you can always read your own (`supabase/06_security_hardening.sql`).
 
 ---
 
@@ -144,13 +158,28 @@ There is no timestamp-based conflict resolution: remote rows overwrite local row
 ### Scans (media)
 - Scans are uploaded to the private `scans` bucket at `{userId}/{rollId}/{shotId}.{ext}`. The storage path is saved in `shots.scan_uri`.
 - Scans are displayed through **signed URLs with a 1-hour expiry** (`getScanUrl`).
-- Bulk import uses a ZIP: `react-native-zip-archive` on native (`roll/import.tsx`) and `fflate` in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
+- Bulk import uses a ZIP, unpacked with `fflate` on both platforms: synchronously on native (`roll/import.tsx`, which has no Web Workers) and asynchronously in the browser (`roll/import.web.tsx`). Filenames are auto-matched to frame numbers, and the user can reassign them before upload.
 - Avatars go to the **public** `avatars` bucket at `{userId}/avatar.{ext}` and are served with public URLs.
 
 ### Location
 - GPS is captured with `expo-location` when a frame is logged, if permission has been granted.
 - Turning typed text into coordinates (geocoding) uses `Location.geocodeAsync` on native and the public **Nominatim** API on web (`app/roll/[id].tsx`).
 - Every distinct `locationLabel` becomes a **Location Journal**, keyed by label (case-insensitive).
+
+### Inventory, lab drop-offs and backup
+- Purchases (`film_purchases`) feed the Film Stash tab; loading a roll from inventory increments `quantityLoaded`.
+- Statuses: Shooting → To Develop → In Development / In Lab → In Scanning → Archived. Old values are mapped through `normalizeStatus`.
+- A lab drop-off (`lab_dropoffs`) groups rolls; each roll records whether the lab develops and/or scans it.
+- After import, the app verifies each scan can be fetched back and stamps `rolls.backed_up_at` / `backed_up_count`.
+
+### Development calculator, chemical sets and batches
+- `src/utils/devCalc.ts` is pure: B&W lookups by film/developer/dilution, push/pull curves, temperature compensation, and fixed-temperature C-41/E-6/ECN-2 kits. Reference data is bundled (`src/constants/devData*.ts`), not stored in Supabase.
+- The Develop tab lists chemical sets, recent batches and links to the calculator. `src/utils/filmMatch.ts` maps the app's film stocks onto the calculator's reference data; `src/utils/batchPlan.ts` computes each picked roll's time and blocks bad combinations (different processes, remjet mixed with non-remjet, times more than 5% apart, no recipe for the film).
+- Chemical sets (`chemical_sets`) track shelf life and capacity (`src/utils/chemistry.ts`). A batch (`dev_batches`) stores its roll IDs, the time and temperature used, and on finish writes development fields onto each roll and moves them to In Scanning.
+
+### Search, stats and export
+- `src/utils/rollFilter.ts` powers the Rolls-tab search and filters; `src/utils/summary.ts` powers the stats card (this month / all time).
+- `src/utils/exportXlsx.ts` builds one .xlsx (Rolls, All frames, a sheet per roll, linked) by writing the XML and zipping it with fflate; `exportFiles.ts` downloads it on web or opens the share sheet on native.
 
 ### Badges & notifications
 - Badges are **computed entirely on the client** from store data (`src/utils/badges.ts` + `BADGES` in constants). There is no database table for them.
@@ -159,7 +188,7 @@ There is no timestamp-based conflict resolution: remote rows overwrite local row
 
 ### Walks & creator notifications
 - Walks have ordered stops (`walk_stops.order_index`), completions, and reviews (one per user per walk).
-- Denormalized counters (`completion_count`, `avg_rating`) are maintained by `SECURITY DEFINER` RPCs that the client calls after writes.
+- Denormalized counters (`completion_count`, `avg_rating`) are maintained by database triggers on `walk_completions` and `walk_reviews` (`supabase/06_security_hardening.sql`). The client never writes them.
 - When someone else reviews or completes a walk, its creator gets a toast via **Supabase Realtime**:
   - `walk_reviews` INSERT is the primary trigger, because it carries the rating and review text.
   - A `walk_completions` INSERT triggers only if no review event arrives within 4 seconds for the same walk and user.
@@ -177,6 +206,9 @@ Tables live in the `public` schema and RLS is enabled on all of them. Each row i
 | `location_journals` | Notes per location label. |
 | `walks`, `walk_stops`, `walk_completions`, `walk_reviews` | Photo walks. |
 | `profiles` | Public handle, display name, bio, avatar. |
+| `film_purchases` | Film inventory. |
+| `lab_dropoffs` | Lab drop-offs; rolls link via `lab_dropoff_id`. |
+| `chemical_sets`, `dev_batches` | Chemistry tracking and development batches. |
 
 **Setup order:**
 
@@ -186,6 +218,7 @@ Tables live in the `public` schema and RLS is enabled on all of them. Each row i
 4. `supabase/03_walk_edit_policies.sql`
 5. `supabase/04_roll_visibility.sql`
 6. `supabase/05_profiles_avatars.sql`
+7. `06_security_hardening.sql` through `10_chemical_sets_batches.sql` (hardening, inventory, lab drop-offs, scan backup, chemical sets and batches)
 
 These are hand-run scripts, not a migration tool. Most are written to be re-runnable (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`). The exception is `01_walks.sql`: its `CREATE POLICY` statements fail if the policies already exist.
 
@@ -194,7 +227,7 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 ## 7. Cross-platform strategy
 
 - **Platform files:** Expo Router resolves `*.web.tsx` ahead of `*.tsx` on web (e.g. `roll/import.web.tsx`).
-- **Module stubs:** `metro.config.js` redirects `react-native-maps`, `react-native-zip-archive`, and `react-native-share` to `src/mocks/*.web.js` on web.
+- **Module stubs:** `metro.config.js` redirects `react-native-maps` to `src/mocks/react-native-maps.web.js` on web.
 - **Dialogs:** `Alert.alert` is a no-op on web, so screens use an inline "confirm" state instead.
 - **Auth on web:** `detectSessionInUrl` is enabled only on web, so password-reset links can be parsed from the URL. The reset screen listens to both `getSession()` and `onAuthStateChange` because Supabase may consume the token before React mounts.
 
@@ -206,13 +239,10 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 
 **Known limitations / tech debt** (contributions welcome):
 
-- **Counter RPCs are spoofable.** Any authenticated user can call `increment_walk_completion` / `refresh_walk_avg_rating` (they run as `SECURITY DEFINER`, without `SET search_path`). Prefer database triggers on `walk_completions` / `walk_reviews`.
-- **Overlapping policies.** The README's original RLS block and `supabase/01_walks.sql` define walk policies under different names. Postgres combines permissive policies with OR, so running both is broader than either alone. For example, the README's `read reviews … using (true)` lets *anyone* read *all* reviews. Pick one set.
-- **Profiles readable regardless of `is_public`.** Hiding private profiles happens only in the app.
-- **No conflict resolution.** Last write wins by ID, and remote data overwrites local data during sync.
+- **Security hardening lives in `supabase/06_security_hardening.sql`.** It keeps private profiles unreadable by others, drops the README's overlapping walk policies, replaces the counter RPCs with triggers, and ignores client writes to `completion_count`, `avg_rating` and `is_featured`. Run it on every project; a database built only from the README's SQL still has the old gaps.
+- **Conflict resolution covers rolls and frames only.** Other entities still use last-write-wins upserts and can overwrite each other's changes.
 - **Whole-store persistence.** Every action rewrites every AsyncStorage key, which is fine at current data sizes.
 - **Large screen files.** `app/roll/[id].tsx` is about 2,300 lines and a candidate for splitting into components.
-- **Dependency drift.** `expo` is on 55 while several `expo-*` / React Native packages are pinned to SDK 52-era versions (hence `--legacy-peer-deps`). Aligning them with `npx expo install --fix` is recommended.
 - **No automated tests** yet.
 
 ---

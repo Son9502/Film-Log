@@ -7,6 +7,8 @@ import { COLORS, MAX_STARS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { uid } from "@/utils";
 import { UserProfile } from "@/types";
+import { formatDistance } from "@/utils/units";
+import { backOrReplace } from "@/utils/navigation";
 
 const DIFFICULTY_COLOR: Record<string, string> = {
   Easy: COLORS.success,
@@ -18,7 +20,7 @@ export default function WalkDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const {
-    personalWalks, communityWalks, completions, myReviews, walkReviews,
+    personalWalks, communityWalks, completions, myReviews, walkReviews, distanceUnit,
     user, markWalkComplete, unmarkWalkComplete, submitReview, deleteReview, deleteWalk,
     fetchWalkReviews, fetchPublicProfile,
   } = useFilmLogStore();
@@ -88,7 +90,7 @@ export default function WalkDetailScreen() {
 
   function handleDeleteWalk() {
     deleteWalk(walk!.id);
-    router.back();
+    backOrReplace(router, "/(tabs)/walks");
   }
 
   return (
@@ -120,7 +122,7 @@ export default function WalkDetailScreen() {
               </Text>
             )}
             {walk.estimatedMinutes != null && <Text style={s.meta}>{walk.estimatedMinutes} min</Text>}
-            {walk.distanceKm != null && <Text style={s.meta}>{walk.distanceKm} km</Text>}
+            {walk.distanceKm != null && <Text style={s.meta}>{formatDistance(walk.distanceKm, distanceUnit)}</Text>}
             <Text style={s.meta}>{walk.stops.length} stops</Text>
           </View>
 

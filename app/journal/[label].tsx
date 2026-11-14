@@ -7,6 +7,7 @@ import { COLORS } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { uid } from "@/utils";
 import { Shot } from "@/types";
+import { backOrReplace } from "@/utils/navigation";
 
 interface LocShot {
   shot: Shot;
@@ -94,7 +95,7 @@ export default function LocationJournalScreen() {
 
   function handleDelete() {
     if (journal) deleteJournal(journal.id);
-    router.back();
+    backOrReplace(router, "/(tabs)/journal");
   }
 
   return (

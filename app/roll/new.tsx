@@ -3,10 +3,16 @@ import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, Modal, FlatList, StyleSheet, Switch,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFilmLogStore } from "@/store";
-import { COLORS, FRAME_COUNT_OPTIONS } from "@/constants";
-import { uid, todayISO } from "@/utils";
+import { COLORS, FRAME_COUNT_OPTIONS, UNKNOWN_CAMERA_ID } from "@/constants";
+import { uid, todayISO, rollsRemaining, hasDuplicateRollName, pickableCameras } from "@/utils";
+import ShotIsoField from "@/components/ShotIsoField";
+import ExpiredFilmField from "@/components/ExpiredFilmField";
+import { stockProcess } from "@/utils/filmMatch";
+import { formatExpiry, isValidExpiry } from "@/utils/expiredFilm";
+import Dropdown from "@/components/Dropdown";
+import { backOrReplace } from "@/utils/navigation";
 
 // ── Generic picker modal ──────────────────────────────────────────────────────
 
@@ -63,19 +69,50 @@ function PickerModal<T extends { id: string; name: string }>({
 
 export default function NewRollScreen() {
   const router = useRouter();
-  const { cameras, filmStocks, addRoll } = useFilmLogStore();
+  const { purchaseId } = useLocalSearchParams<{ purchaseId?: string }>();
+  const { rolls, cameras, filmStocks, purchases, addRoll, loadRollFromPurchase, addCamera } = useFilmLogStore();
+  const cameraChoices = pickableCameras(cameras, rolls);
+  const available = purchases.filter((p) => rollsRemaining(p) > 0);
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState(
+    available.find((p) => p.id === purchaseId)?.id ?? available[0]?.id ?? ""
+  );
+  const [skipInventory, setSkipInventory] = useState(false);
+  const purchase = skipInventory ? undefined : available.find((p) => p.id === selectedPurchaseId);
 
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
-  const [cameraId, setCameraId] = useState(cameras[0]?.id ?? "");
-  const [filmStockId, setFilmStockId] = useState(filmStocks[0]?.id ?? "");
+  const [cameraId, setCameraId] = useState(cameraChoices[0]?.id ?? UNKNOWN_CAMERA_ID);
+  const [newCameraOpen, setNewCameraOpen] = useState(cameraChoices.length === 0);
+  const [newCameraName, setNewCameraName] = useState("");
+
+  function handleAddCamera() {
+    const name = newCameraName.trim();
+    if (!name) return;
+    const existing = cameras.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setCameraId(existing.id);
+    } else {
+      const camera = { id: uid(), name, isCustom: true };
+      addCamera(camera);
+      setCameraId(camera.id);
+    }
+    setNewCameraName("");
+    setNewCameraOpen(false);
+  }
+  const [filmStockId, setFilmStockId] = useState(purchase?.filmStockId ?? filmStocks[0]?.id ?? "");
+  const stockName = (id: string) => filmStocks.find((f) => f.id === id)?.name ?? "Unknown film";
+  const [shotIso, setShotIso] = useState(""); // empty = box speed
+  const [manualExpiry, setManualExpiry] = useState(""); // for film not from the inventory
+  const [compStops, setCompStops] = useState(0); // extra exposure for the film's age
+  const expiresAt = purchase ? purchase.expiresAt ?? "" : manualExpiry;
+  /** A different film: start again at box speed with no age compensation. */
+  const resetRating = () => { setShotIso(""); setCompStops(0); };
   const [frameCount, setFrameCount] = useState(36);
   const [customFrames, setCustomFrames] = useState("");
   const [useCustomFrames, setUseCustomFrames] = useState(false);
 
   const [isPublic, setIsPublic] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
-  const [filmPickerOpen, setFilmPickerOpen] = useState(false);
 
   const selectedCamera = cameras.find((c) => c.id === cameraId);
   const selectedFilm = filmStocks.find((f) => f.id === filmStockId);
@@ -84,25 +121,69 @@ export default function NewRollScreen() {
 
   function handleSubmit() {
     if (resolvedFrameCount <= 0) return;
-    addRoll({
+    if (!purchase && manualExpiry.trim() && !isValidExpiry(manualExpiry)) return;
+    const roll = {
       id: uid(),
       name: name.trim() || undefined,
       cameraId,
       filmStockId,
-      iso: selectedFilm?.iso.toString() ?? "400",
+      iso: (parseInt(shotIso, 10) > 0 ? shotIso : selectedFilm?.iso.toString()) ?? "400",
+      notes: notes.trim() || undefined,
+      expiresAt: expiresAt.trim() || undefined,
+      expiryCompStops: compStops || undefined,
       frameCount: resolvedFrameCount,
-      status: "Stock",
+      status: "Shooting" as const,
       shots: [],
       isPublic,
       loadedAt: todayISO(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
-    router.back();
+    } as const;
+    if (purchase) loadRollFromPurchase(purchase.id, { ...roll, shots: [] });
+    else addRoll({ ...roll, shots: [] });
+    backOrReplace(router, "/(tabs)");
+  }
+
+  if (available.length === 0 && !skipInventory) {
+    return (
+      <View style={[s.container, s.content, { justifyContent: "center" }]}>
+        <Text style={s.emptyTitle}>No film in stock</Text>
+        <Text style={s.emptySub}>Add what you've bought to your inventory, then load a roll from it.</Text>
+        <TouchableOpacity style={s.submitBtn} onPress={() => router.replace("/(tabs)/inventory")}>
+          <Text style={s.submitText}>Add film to inventory</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{ alignItems: "center", marginTop: 20 }} onPress={() => setSkipInventory(true)}>
+          <Text style={s.skipText}>Log a roll without inventory</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+
+      {/* Inventory source */}
+      {purchase && (
+        <>
+          <Text style={s.label}>Load from inventory</Text>
+          <Dropdown
+            items={available.map((p) => ({
+              id: p.id,
+              label: stockName(p.filmStockId),
+              sub: `${rollsRemaining(p)} left${p.expiresAt ? ` · exp ${formatExpiry(p.expiresAt)}` : ""}`,
+            }))}
+            selectedId={purchase.id}
+            onSelect={(i) => {
+              setSelectedPurchaseId(i.id);
+              const p = available.find((x) => x.id === i.id);
+              if (p) { setFilmStockId(p.filmStockId); resetRating(); }
+            }}
+          />
+          <TouchableOpacity onPress={() => { setSkipInventory(true); resetRating(); }}>
+            <Text style={[s.skipText, { marginTop: 8 }]}>Not from inventory</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       {/* Roll Name */}
       <Text style={s.label}>Roll Name (optional)</Text>
@@ -113,25 +194,70 @@ export default function NewRollScreen() {
         placeholder="e.g. Yosemite Trip"
         placeholderTextColor={COLORS.textDim}
       />
+      {hasDuplicateRollName(name, rolls) && (
+        <Text style={s.nameWarning}>Another roll has this name. You can still create a separate roll.</Text>
+      )}
 
       {/* Camera */}
       <Text style={s.label}>Camera</Text>
-      <TouchableOpacity style={s.picker} onPress={() => setCameraPickerOpen(true)}>
-        <Text style={s.pickerText}>{selectedCamera?.name ?? "Select camera"}</Text>
-        <Text style={s.pickerArrow}>›</Text>
-      </TouchableOpacity>
+      {cameraChoices.length > 0 && (
+        <TouchableOpacity style={s.picker} onPress={() => setCameraPickerOpen(true)}>
+          <Text style={s.pickerText}>{selectedCamera?.name ?? "Select camera"}</Text>
+          <Text style={s.pickerArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+      {newCameraOpen ? (
+        <View style={s.addCameraRow}>
+          <TextInput
+            style={[s.input, { flex: 1 }]}
+            value={newCameraName}
+            onChangeText={setNewCameraName}
+            onSubmitEditing={handleAddCamera}
+            placeholder="Your camera, e.g. Nikon FE"
+            placeholderTextColor={COLORS.textDim}
+          />
+          <TouchableOpacity style={s.addCameraBtn} onPress={handleAddCamera}>
+            <Text style={s.addCameraBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={() => setNewCameraOpen(true)}>
+          <Text style={[s.skipText, { marginTop: 8 }]}>+ Add a camera</Text>
+        </TouchableOpacity>
+      )}
+      {cameraChoices.length === 0 && (
+        <Text style={s.pickerSub}>Optional: without one, the roll is saved with an unknown camera.</Text>
+      )}
 
       {/* Film Stock */}
       <Text style={s.label}>Film Stock</Text>
-      <TouchableOpacity style={s.picker} onPress={() => setFilmPickerOpen(true)}>
-        <View>
-          <Text style={s.pickerText}>{selectedFilm?.name ?? "Select film stock"}</Text>
-          {selectedFilm && (
-            <Text style={s.pickerSub}>ISO {selectedFilm.iso}</Text>
-          )}
+      {purchase ? (
+        <View style={s.picker}>
+          <View>
+            <Text style={s.pickerText}>{selectedFilm?.name ?? "Unknown film"}</Text>
+            {selectedFilm && <Text style={s.pickerSub}>ISO {selectedFilm.iso}</Text>}
+          </View>
         </View>
-        <Text style={s.pickerArrow}>›</Text>
-      </TouchableOpacity>
+      ) : (
+        <Dropdown
+          items={filmStocks.map((f) => ({ id: f.id, label: f.name, sub: `ISO ${f.iso}` }))}
+          selectedId={filmStockId}
+          onSelect={(i) => { setFilmStockId(i.id); resetRating(); }}
+          placeholder="Select film stock"
+        />
+      )}
+      <ExpiredFilmField
+        boxIso={selectedFilm?.iso}
+        process={stockProcess(selectedFilm)}
+        expiresAt={expiresAt}
+        onExpiresAtChange={purchase ? undefined : setManualExpiry}
+        compStops={compStops}
+        onCompChange={setCompStops}
+        shotIso={shotIso}
+        onShotIsoChange={setShotIso}
+        labelStyle={s.label}
+      />
+      <ShotIsoField boxIso={selectedFilm?.iso} value={shotIso} onChange={setShotIso} labelStyle={s.label} ageCompStops={compStops} />
 
       {/* Frame Count */}
       <Text style={s.label}>Frame Count</Text>
@@ -194,26 +320,17 @@ export default function NewRollScreen() {
 
       {/* Submit */}
       <TouchableOpacity style={s.submitBtn} onPress={handleSubmit}>
-        <Text style={s.submitText}>Add to Stock</Text>
+        <Text style={s.submitText}>{purchase ? "Load Roll" : "Add Roll"}</Text>
       </TouchableOpacity>
 
       {/* Pickers */}
       <PickerModal
         visible={cameraPickerOpen}
         title="Select Camera"
-        items={cameras}
+        items={cameraChoices}
         selectedId={cameraId}
         onSelect={(c) => setCameraId(c.id)}
         onClose={() => setCameraPickerOpen(false)}
-      />
-      <PickerModal
-        visible={filmPickerOpen}
-        title="Select Film Stock"
-        items={filmStocks}
-        selectedId={filmStockId}
-        onSelect={(f) => setFilmStockId(f.id)}
-        onClose={() => setFilmPickerOpen(false)}
-        renderSub={(f) => `ISO ${(f as typeof filmStocks[0]).iso}`}
       />
 
     </ScrollView>
@@ -236,6 +353,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10,
   },
   inputMulti: { height: 80, textAlignVertical: "top" },
+  nameWarning: { color: COLORS.amber, fontFamily: "Courier New", fontSize: 11, marginTop: 6 },
   picker: {
     backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border,
     paddingHorizontal: 12, paddingVertical: 10,
@@ -259,6 +377,12 @@ const s = StyleSheet.create({
   },
   toggleLabel: { fontSize: 13, color: COLORS.textPrimary, fontFamily: "Courier New" },
   toggleSub: { fontSize: 9, color: COLORS.textMuted, fontFamily: "Courier New", marginTop: 2 },
+  emptyTitle: { fontSize: 16, color: COLORS.textPrimary, fontFamily: "Courier New", textAlign: "center" },
+  emptySub: { fontSize: 11, color: COLORS.textMuted, fontFamily: "Courier New", textAlign: "center", marginTop: 8 },
+  addCameraRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  addCameraBtn: { backgroundColor: COLORS.amber, paddingHorizontal: 16, justifyContent: "center" },
+  addCameraBtnText: { fontSize: 10, color: COLORS.bg, fontFamily: "Courier New", letterSpacing: 1.5, textTransform: "uppercase" },
+  skipText: { fontSize: 10, color: COLORS.textMuted, fontFamily: "Courier New", letterSpacing: 1, textDecorationLine: "underline" },
   submitBtn: {
     marginTop: 32, backgroundColor: COLORS.amber,
     paddingVertical: 14, alignItems: "center",
