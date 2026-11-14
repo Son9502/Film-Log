@@ -10,7 +10,7 @@ import { uid, todayISO, rollsRemaining, hasDuplicateRollName, pickableCameras } 
 import ShotIsoField from "@/components/ShotIsoField";
 import ExpiredFilmField from "@/components/ExpiredFilmField";
 import { stockProcess } from "@/utils/filmMatch";
-import { isValidExpiry } from "@/utils/expiredFilm";
+import { formatExpiry, isValidExpiry } from "@/utils/expiredFilm";
 import Dropdown from "@/components/Dropdown";
 import { backOrReplace } from "@/utils/navigation";
 
@@ -170,7 +170,7 @@ export default function NewRollScreen() {
             items={available.map((p) => ({
               id: p.id,
               label: stockName(p.filmStockId),
-              sub: `${rollsRemaining(p)} left${p.expiresAt ? ` · exp ${p.expiresAt}` : ""}`,
+              sub: `${rollsRemaining(p)} left${p.expiresAt ? ` · exp ${formatExpiry(p.expiresAt)}` : ""}`,
             }))}
             selectedId={purchase.id}
             onSelect={(i) => {

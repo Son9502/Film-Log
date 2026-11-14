@@ -37,7 +37,16 @@ export function yearsPastExpiry(expiresAt: string | undefined, today: string): n
   return days > 0 ? days / 365.25 : 0;
 }
 
-export const isValidExpiry = (v: string) => DATE_RE.test(v.trim());
+/** YYYY-MM-DD or YYYY-MM (film boxes often print only the month), with a real month and day. */
+export function isValidExpiry(v: string): boolean {
+  const m = DATE_RE.exec(v.trim());
+  if (!m) return false;
+  const month = +m[2];
+  if (month < 1 || month > 12) return false;
+  if (m[3] === undefined) return true;
+  const day = +m[3];
+  return day >= 1 && day <= new Date(+m[1], month, 0).getDate();
+}
 
 /** Rounds to the nearest third of a stop, stored to two decimals (1.33, 0.67) so it syncs exactly. */
 export function roundCompStops(stops: number): number {

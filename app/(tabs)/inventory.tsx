@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import { uid, todayISO, formatDate, isExpired, rollsRemaining } from "@/utils";
+import { formatExpiry, isValidExpiry } from "@/utils/expiredFilm";
 import { FilmPurchase } from "@/types";
 import Dropdown from "@/components/Dropdown";
 
@@ -54,19 +55,19 @@ export default function InventoryScreen() {
     if (!qty || qty <= 0) return setError("Quantity must be at least 1.");
     if (cost !== undefined && (isNaN(cost) || cost < 0)) return setError("Price must be a positive number.");
     if (!DATE_RE.test(purchasedAt)) return setError("Purchase date must be YYYY-MM-DD.");
-    if (expiresAt && !DATE_RE.test(expiresAt)) return setError("Expiry must be YYYY-MM-DD.");
+    if (expiresAt.trim() && !isValidExpiry(expiresAt)) return setError("Expiry must be YYYY-MM-DD or YYYY-MM.");
     const now = new Date().toISOString();
 
     if (editing === "new") {
       addPurchase({
         id: uid(), filmStockId, quantity: qty, quantityLoaded: 0, price: cost,
-        purchasedAt, expiresAt: expiresAt || undefined, createdAt: now, updatedAt: now,
+        purchasedAt, expiresAt: expiresAt.trim() || undefined, createdAt: now, updatedAt: now,
       });
     } else if (editing) {
       if (qty < editing.quantityLoaded) return setError(`${editing.quantityLoaded} already loaded; quantity can't be lower.`);
       updatePurchase({
         ...editing, filmStockId, quantity: qty, price: cost,
-        purchasedAt, expiresAt: expiresAt || undefined, updatedAt: now,
+        purchasedAt, expiresAt: expiresAt.trim() || undefined, updatedAt: now,
       });
     }
     setEditing(null);
@@ -100,7 +101,7 @@ export default function InventoryScreen() {
               </Text>
               {p.expiresAt && (
                 <Text style={[s.cardSub, expired && s.expired]}>
-                  {expired ? "Expired " : "Expires "}{formatDate(p.expiresAt)}
+                  {expired ? "Expired " : "Expires "}{formatExpiry(p.expiresAt)}
                   {expired && left > 0 ? " — shoot it soon or overexpose" : ""}
                 </Text>
               )}
@@ -155,8 +156,8 @@ export default function InventoryScreen() {
             <Text style={s.label}>Purchased (YYYY-MM-DD)</Text>
             <TextInput style={s.input} value={purchasedAt} onChangeText={setPurchasedAt} autoCapitalize="none" placeholderTextColor={COLORS.textDim} />
 
-            <Text style={s.label}>Expires (YYYY-MM-DD, optional)</Text>
-            <TextInput style={s.input} value={expiresAt} onChangeText={setExpiresAt} autoCapitalize="none" placeholder="2027-06-30" placeholderTextColor={COLORS.textDim} />
+            <Text style={s.label}>Expires (YYYY-MM-DD or YYYY-MM, optional)</Text>
+            <TextInput style={s.input} value={expiresAt} onChangeText={setExpiresAt} autoCapitalize="none" placeholder="2027-06-30 or 2027-06" placeholderTextColor={COLORS.textDim} />
 
             {error !== "" && <Text style={s.error}>{error}</Text>}
 

@@ -1,10 +1,10 @@
 import {
-  expiryAdvice, formatAge, formatExpiry, nearestStandardIso, rateSlower, ratingSummary,
+  expiryAdvice, formatAge, formatExpiry, isValidExpiry, nearestStandardIso, rateSlower, ratingSummary,
   roundCompStops, yearsPastExpiry,
 } from "./expiredFilm";
 import { developmentStops, pushLabel, stopsText } from "./devCalc";
 import { dbToRoll, rollSyncFields, rollToDb } from "./rollRows";
-import { todayISO } from "./index";
+import { isExpired, todayISO } from "./index";
 import type { Roll } from "@/types";
 
 const today = "2026-11-13";
@@ -144,5 +144,22 @@ describe("timestamps from timestamptz columns", () => {
       expect(normalizeDay(v)).toBe(v);
       expect(normalizeShotTime(v)).toBe(v);
     }
+  });
+});
+
+describe("month-only expiry dates", () => {
+  it("accepts YYYY-MM and real dates only", () => {
+    expect(isValidExpiry("2014-06")).toBe(true);
+    expect(isValidExpiry(" 2014-06-30 ")).toBe(true);
+    expect(isValidExpiry("2014-13")).toBe(false);
+    expect(isValidExpiry("2014-02-30")).toBe(false);
+    expect(isValidExpiry("2024-02-29")).toBe(true);
+    expect(isValidExpiry("June 2014")).toBe(false);
+  });
+  it("counts a month-only date as good until the month ends", () => {
+    expect(isExpired("2026-11", "2026-11-14")).toBe(false);
+    expect(isExpired("2026-10", "2026-11-14")).toBe(true);
+    expect(isExpired("2026-11-13", "2026-11-14")).toBe(true);
+    expect(isExpired("2026-11-14", "2026-11-14")).toBe(false);
   });
 });

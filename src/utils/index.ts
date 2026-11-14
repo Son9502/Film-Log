@@ -33,8 +33,10 @@ export function pickableCameras<C extends { id: string; isCustom: boolean }>(
 }
 
 // ── Film inventory ────────────────────────────────────────────────────────────
-export function isExpired(expiresAt?: string): boolean {
-  return !!expiresAt && expiresAt < todayISO();
+/** A month-only expiry ("2026-06") lasts to the end of that month. */
+export function isExpired(expiresAt?: string, today = todayISO()): boolean {
+  if (!expiresAt) return false;
+  return /^\d{4}-\d{2}$/.test(expiresAt) ? expiresAt < today.slice(0, 7) : expiresAt < today;
 }
 
 export function rollsRemaining(p: { quantity: number; quantityLoaded: number }): number {
