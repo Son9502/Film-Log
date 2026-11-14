@@ -1,4 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  ImageKind, ScanFileError, checkScanFile, scanContentType, uploadTimeoutMs, withRetry, withTimeout,
+} from "@/utils/scanUploadSafety";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
@@ -68,17 +71,51 @@ export async function uploadScan(
   shotId: string,
   localUri: string,
 ): Promise<string> {
-  const ext = localUri.split(".").pop()?.toLowerCase() ?? "jpg";
-  const path = `${userId}/${rollId}/${shotId}.${ext}`;
+  const ext = scanExtFromUri(localUri);
   const response = await fetch(localUri);
-  if (!response.ok) throw new Error(`Could not read scan file (HTTP ${response.status}).`);
+  if (!response.ok) throw new ScanFileError(`Could not read the file (HTTP ${response.status}).`);
   const blob = await response.blob();
-  const { error } = await supabase.storage.from("scans").upload(path, blob, {
-    contentType: ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`,
-    upsert: true,
+  const kind = checkScanFile({ size: blob.size, head: await readHead(blob) });
+  return uploadScanData(userId, rollId, shotId, blob, ext, kind, blob.size);
+}
+
+/** Uploads checked scan data (a Blob, or bytes on web) with a timeout and one retry. */
+export async function uploadScanData(
+  userId: string, rollId: string, shotId: string,
+  data: Blob | Uint8Array, ext: string, kind: ImageKind | null, size: number,
+): Promise<string> {
+  const path = `${userId}/${rollId}/${shotId}.${ext}`;
+  const timeout = uploadTimeoutMs(size);
+  await withRetry(async () => {
+    const { error } = await withTimeout(
+      supabase.storage.from("scans").upload(path, data, { contentType: scanContentType(ext, kind), upsert: true }),
+      timeout,
+    );
+    if (error) throw error;
   });
-  if (error) throw error;
   return path;
+}
+
+/** "file:///…/frame.TIF?x=1" → "tif"; "jpg" when there's no usable extension. */
+export function scanExtFromUri(uri: string): string {
+  const ext = uri.split("?")[0].split("#")[0].split("/").pop()?.split(".").slice(1).pop()?.toLowerCase();
+  return ext && /^[a-z0-9]{2,5}$/.test(ext) ? ext : "jpg";
+}
+
+/** The first bytes of a Blob, or null if this platform can't read them (the content check is then skipped). */
+async function readHead(blob: Blob): Promise<Uint8Array | null> {
+  try {
+    const part = blob.slice(0, 16);
+    if (typeof part.arrayBuffer === "function") return new Uint8Array(await part.arrayBuffer());
+    return await new Promise<Uint8Array>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(part);
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function getScanUrl(path: string): Promise<string> {

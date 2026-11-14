@@ -6,6 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Directory, File, Paths } from "expo-file-system";
 import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
+import { ScanFileError, checkZipSize, friendlyUploadError } from "@/utils/scanUploadSafety";
 import { unzipSync } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
@@ -37,6 +38,9 @@ export default function ImportScansScreen() {
   const [uploadFailed, setUploadFailed] = useState(0);
   const [currentFile, setCurrentFile] = useState<string>();
   const [failures, setFailures] = useState<string[]>([]);
+  // Failed for a reason a retry could fix (network, timeout, server).
+  const [failedFiles, setFailedFiles] = useState<FileEntry[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!roll) {
@@ -94,6 +98,7 @@ export default function ImportScansScreen() {
   /** Photos keeps the order you tapped. */
   async function pickFromPhotos() {
     setError(null);
+    setNotice(null);
     try {
       const picked = await pickScansFromPhotos(true);
       if (picked) showPicked(picked, "No photos selected.");
@@ -105,21 +110,40 @@ export default function ImportScansScreen() {
   /** One image, several, or ZIPs of scans (or a mix), sorted by file name. */
   async function pickFromFiles() {
     setError(null);
+    setNotice(null);
     try {
       const picked = await pickScansFromFiles(true, true);
       if (!picked) return;
 
       const images = picked.filter((p) => !p.isZip && IMAGE_EXTS.test(p.name));
       const zips = picked.filter((p) => p.isZip);
+      const notes: string[] = [];
+      const skippedFiles = picked.length - images.length - zips.length;
+      if (skippedFiles > 0) notes.push(`${skippedFiles} file${skippedFiles === 1 ? " isn't an image" : "s aren't images"} and ${skippedFiles === 1 ? "was" : "were"} skipped.`);
+
       if (zips.length > 0) {
         const destDir = new Directory(Paths.cache, `import_${Date.now()}`);
         destDir.create({ intermediates: true });
         let n = 0;
         for (const zip of zips) {
-          // fflate's async unzip needs Web Workers, which React Native lacks, so unzip synchronously.
-          const unzipped = unzipSync(await new File(zip.uri).bytes(), {
-            filter: (entry) => IMAGE_EXTS.test(entry.name) && !entry.name.startsWith("__MACOSX"),
-          });
+          checkZipSize(zip.name, new File(zip.uri).size);
+          let skipped = 0;
+          let unzipped: Record<string, Uint8Array>;
+          try {
+            // fflate's async unzip needs Web Workers, which React Native lacks, so unzip synchronously.
+            unzipped = unzipSync(await new File(zip.uri).bytes(), {
+              filter: (entry) => {
+                const keep = IMAGE_EXTS.test(entry.name) && !entry.name.includes("__MACOSX");
+                if (!keep && !entry.name.endsWith("/")) skipped++;
+                return keep;
+              },
+            });
+          } catch {
+            throw new ScanFileError(`"${zip.name}" isn't a readable ZIP. It may be damaged or still downloading.`);
+          }
+          const found = Object.keys(unzipped).length;
+          if (found === 0) notes.push(`"${zip.name}" has no JPEG, PNG, TIFF or HEIC images in it.`);
+          else if (skipped > 0) notes.push(`"${zip.name}": ${skipped} non-image file${skipped === 1 ? "" : "s"} skipped.`);
           for (const [path, data] of Object.entries(unzipped)) {
             const name = path.split("/").pop() ?? path;
             const file = new File(destDir, `${n++}_${name}`);
@@ -129,24 +153,26 @@ export default function ImportScansScreen() {
         }
       }
 
-      showPicked(images.sort(byName), zips.length ? "No images found in the selected files." : "No images selected.");
-    } catch (e: any) {
-      setError(e.message ?? "Failed to read the selected files.");
+      showPicked(images.sort(byName), notes.join(" ") || "No images selected.");
+      if (images.length > 0 && notes.length > 0) setNotice(notes.join(" "));
+    } catch (e: unknown) {
+      setError(friendlyUploadError(e) || "Failed to read the selected files.");
     }
   }
 
-  async function confirmImport() {
+  async function confirmImport(only?: FileEntry[]) {
     if (!user) {
       setError("Sign in required to upload scans.");
       return;
     }
 
-    const toUpload = files.filter((f) => assignments[f.id] != null);
+    const toUpload = only ?? files.filter((f) => assignments[f.id] != null);
     if (toUpload.length === 0) {
       setError("Assign at least one file to a frame.");
       return;
     }
 
+    setFailedFiles([]);
     setStep("uploading");
     setUploadTotal(toUpload.length);
     setUploadDone(0);
@@ -169,8 +195,8 @@ export default function ImportScansScreen() {
         setUploadDone(done);
       } catch (e: unknown) {
         console.error(`Upload failed for frame ${frameNum}:`, e);
-        const message = e instanceof Error ? e.message : String(e);
-        setFailures((previous) => [...previous, `${file.name}: ${message}`]);
+        setFailures((previous) => [...previous, `${file.name} (frame ${frameNum}): ${friendlyUploadError(e)}`]);
+        if (!(e instanceof ScanFileError)) setFailedFiles((previous) => [...previous, file]);
         failed++;
         setUploadFailed(failed);
       }
@@ -201,10 +227,15 @@ export default function ImportScansScreen() {
         <Text style={s.doneTitle}>{uploadFailed > 0 ? (uploadDone > 0 ? "Import Partially Complete" : "Import Failed") : "Import Complete"}</Text>
         <Text style={s.doneSub}>
           {uploadDone} scan{uploadDone !== 1 ? "s" : ""} uploaded.
-          {uploadFailed > 0 && `\n${uploadFailed} failed — check your connection and Supabase storage bucket.`}
+          {uploadFailed > 0 && `\n${uploadFailed} failed. The reasons are below.`}
           {"\nFrame metadata sync is separate; verify your scans on another device before deleting originals."}
         </Text>
         {failures.map((failure, index) => <Text key={index} style={s.error}>{failure}</Text>)}
+        {failedFiles.length > 0 && (
+          <TouchableOpacity style={s.btnBlock} onPress={() => confirmImport(failedFiles)}>
+            <Text style={s.btnText}>Retry {failedFiles.length} failed</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={s.btnBlock} onPress={() => backOrReplace(router, { pathname: "/roll/[id]", params: { id: roll.id } })}>
           <Text style={s.btnText}>Back to Roll</Text>
         </TouchableOpacity>
@@ -263,6 +294,7 @@ export default function ImportScansScreen() {
         ListHeaderComponent={
           <>
             <Text style={s.sectionTitle}>Assign Scans to Frames</Text>
+            {notice && <Text style={s.mismatchText}>{notice}</Text>}
 
             {/* Mismatch warning */}
             {files.length !== frameNumbers.length && (
@@ -321,7 +353,7 @@ export default function ImportScansScreen() {
               <TouchableOpacity style={s.btnSecondary} onPress={() => setStep("pick")} disabled={creating}>
                 <Text style={s.btnSecondaryText}>Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.btn, creating && s.btnDisabled]} onPress={confirmImport} disabled={creating}>
+              <TouchableOpacity style={[s.btn, creating && s.btnDisabled]} onPress={() => confirmImport()} disabled={creating}>
                 <Text style={s.btnText}>
                   Upload {assignedCount} Scan{assignedCount !== 1 ? "s" : ""}
                 </Text>

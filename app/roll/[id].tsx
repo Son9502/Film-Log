@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
+import { friendlyUploadError } from "@/utils/scanUploadSafety";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
@@ -553,7 +554,7 @@ function EditShotModal({
         scanUri = await uploadScan(user.id, rollId, shot!.id, pendingLocalUri);
       } catch (e) {
         console.error("Scan upload failed:", e);
-        setScanError("Scan upload failed. Check your connection and try again.");
+        setScanError(`Scan upload failed: ${friendlyUploadError(e)}`);
         return;
       } finally {
         setScanUploading(false);
