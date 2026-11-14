@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  Modal, ScrollView, StyleSheet, Image, ActivityIndicator, Platform, Switch, useWindowDimensions,
+  Modal, ScrollView, StyleSheet, Image, ActivityIndicator, Platform, Switch, useWindowDimensions, Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
@@ -495,16 +495,23 @@ function EditShotModal({
 
   const hasScan = pendingLocalUri !== null || (!scanRemoved && !!shot.scanUri);
 
-  async function pickScan() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"] as any,
-      quality: 0.85,
-    });
-    if (!result.canceled && result.assets[0]) {
+  async function attachScan(source: "photos" | "files") {
+    const picked = source === "photos" ? await pickScansFromPhotos(false) : await pickScansFromFiles(false);
+    if (picked?.[0]) {
       setScanSize({ width: 3, height: 2 });
-      setPendingLocalUri(result.assets[0].uri);
+      setPendingLocalUri(picked[0].uri);
       setScanRemoved(false);
     }
+  }
+
+  function pickScan() {
+    // The browser shows one file dialog either way.
+    if (Platform.OS === "web") return attachScan("photos");
+    Alert.alert("Attach scan", undefined, [
+      { text: "Photos", onPress: () => attachScan("photos") },
+      { text: "Files", onPress: () => attachScan("files") },
+      { text: "Cancel", style: "cancel" },
+    ]);
   }
 
   async function handleResolveLocation() {

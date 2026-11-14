@@ -6,7 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { Directory, File, Paths } from "expo-file-system";
-import * as ImagePicker from "expo-image-picker";
+import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
 import { unzipSync } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
@@ -118,26 +118,22 @@ export default function ImportScansScreen() {
     }
   }
 
-  async function pickPhotos() {
+  async function pickImages(source: "photos" | "files") {
     setError(null);
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"] as any,
-        allowsMultipleSelection: true,
-        quality: 0.85,
-        orderedSelection: true,
-      });
-      if (result.canceled) return;
+      const picked = source === "photos" ? await pickScansFromPhotos(true) : await pickScansFromFiles(true);
+      if (!picked) return;
 
-      if (result.assets.length === 0) {
-        setError("No photos selected.");
+      if (picked.length === 0) {
+        setError("No images selected.");
         return;
       }
 
-      const imageFiles: FileEntry[] = identifyScanFiles(result.assets.map((asset, i) => ({
-        name: asset.fileName ?? `photo_${i + 1}.jpg`,
-        uri: asset.uri,
-      })));
+      // Files keep their names, so sort them like a ZIP; Photos keeps the order you tapped.
+      const ordered = source === "files"
+        ? [...picked].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+        : picked;
+      const imageFiles: FileEntry[] = identifyScanFiles(ordered);
 
       setFiles(imageFiles);
       setAssignments(assignScanFrames(imageFiles, frameNumbers));
@@ -252,10 +248,17 @@ export default function ImportScansScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={s.optionBtn}
-          onPress={pickPhotos}
+          onPress={() => pickImages("files")}
         >
-          <Text style={s.optionBtnTitle}>Select Individual Photos</Text>
-          <Text style={s.optionBtnSub}>Pick one or more images from your library</Text>
+          <Text style={s.optionBtnTitle}>Select Files</Text>
+          <Text style={s.optionBtnSub}>Originals from Files or iCloud Drive, sorted by file name</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={s.optionBtn}
+          onPress={() => pickImages("photos")}
+        >
+          <Text style={s.optionBtnTitle}>Select From Photos</Text>
+          <Text style={s.optionBtnSub}>Pick images from your library, in the order you tap them</Text>
         </TouchableOpacity>
       </View>
     );
