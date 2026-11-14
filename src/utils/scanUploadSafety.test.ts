@@ -1,6 +1,6 @@
 import {
   MAX_SCAN_MB, ScanFileError, UploadTimeoutError, checkScanFile, checkZipSize, detectImageKind,
-  friendlyUploadError, isRetryable, scanContentType, uploadTimeoutMs, withRetry, withTimeout,
+  friendlyUploadError, isRetryable, logUploadError, scanContentType, uploadTimeoutMs, withRetry, withTimeout,
 } from "./scanUploadSafety";
 
 const bytes = (...b: number[]) => new Uint8Array([...b, ...Array(16).fill(0)].slice(0, 16));
@@ -80,5 +80,17 @@ describe("friendlyUploadError", () => {
     expect(friendlyUploadError(new Error("Bucket not found"))).toMatch(/scans/);
     expect(friendlyUploadError(new Error("new row violates row-level security policy"))).toMatch(/Sign out/);
     expect(friendlyUploadError(new Error("Network request failed"))).toMatch(/connection/);
+  });
+});
+
+describe("logUploadError", () => {
+  it("stays quiet for bad files and network drops, logs anything else", () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    logUploadError("x", new ScanFileError("not an image"));
+    logUploadError("x", new Error("fetch failed: The Internet connection appears to be offline."));
+    expect(spy).not.toHaveBeenCalled();
+    logUploadError("x", new Error("Bucket not found"));
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 });

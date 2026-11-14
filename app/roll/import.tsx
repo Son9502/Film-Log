@@ -6,7 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Directory, File, Paths } from "expo-file-system";
 import { pickScansFromFiles, pickScansFromPhotos } from "@/utils/pickScans";
-import { ScanFileError, checkZipSize, friendlyUploadError } from "@/utils/scanUploadSafety";
+import { ScanFileError, checkZipSize, friendlyUploadError, logUploadError } from "@/utils/scanUploadSafety";
 import { unzipSync } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
@@ -194,7 +194,7 @@ export default function ImportScansScreen() {
         done++;
         setUploadDone(done);
       } catch (e: unknown) {
-        console.error(`Upload failed for frame ${frameNum}:`, e);
+        logUploadError(`Upload failed for frame ${frameNum}:`, e);
         setFailures((previous) => [...previous, `${file.name} (frame ${frameNum}): ${friendlyUploadError(e)}`]);
         if (!(e instanceof ScanFileError)) setFailedFiles((previous) => [...previous, file]);
         failed++;

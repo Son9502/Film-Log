@@ -135,3 +135,13 @@ export function friendlyUploadError(e: unknown): string {
   if (isRetryable(e)) return `Network problem (${text || "no response"}). Check your connection and retry.`;
   return text || "Something went wrong.";
 }
+
+/**
+ * Logs an upload failure only when it's unexpected. A bad file or a dropped
+ * connection is already shown to the user, so logging it would just raise a
+ * red error box in development.
+ */
+export function logUploadError(context: string, e: unknown): void {
+  if (e instanceof ScanFileError || isRetryable(e)) return;
+  console.error(context, e);
+}

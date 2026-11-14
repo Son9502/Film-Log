@@ -10,7 +10,7 @@ import { unzip } from "fflate";
 import { useFilmLogStore } from "@/store";
 import { COLORS } from "@/constants";
 import { uploadScanData } from "@/services/supabase";
-import { ScanFileError, checkScanFile, checkZipSize, friendlyUploadError } from "@/utils/scanUploadSafety";
+import { ScanFileError, checkScanFile, checkZipSize, friendlyUploadError, logUploadError } from "@/utils/scanUploadSafety";
 import ScanUploadProgress from "@/components/ScanUploadProgress";
 import { backOrReplace } from "@/utils/navigation";
 import { useScanImportFrames } from "@/utils/useScanImportFrames";
@@ -200,7 +200,7 @@ export default function ImportScansScreen() {
         done++;
         setUploadDone(done);
       } catch (e: unknown) {
-        console.error(`Upload failed for frame ${frameNum}:`, e);
+        logUploadError(`Upload failed for frame ${frameNum}:`, e);
         setFailures((previous) => [...previous, `${file.name} (frame ${frameNum}): ${friendlyUploadError(e)}`]);
         if (!(e instanceof ScanFileError)) retryable.push(file);
         failed++;
