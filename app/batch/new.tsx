@@ -9,6 +9,7 @@ import { DEFAULT_ML_PER_ROLL, minimumWarning, mixFor } from "@/utils/mix";
 import { formatDuration, stopsText } from "@/utils/devCalc";
 import { planBatch } from "@/utils/batchPlan";
 import { stockProcess } from "@/utils/filmMatch";
+import { BATCH_STATUSES } from "@/utils/rollStatus";
 import type { DevProcess, Roll } from "@/types";
 import Dropdown from "@/components/Dropdown";
 import { formatTemperature, temperatureFromCelsius, temperatureToCelsius } from "@/utils/units";
@@ -25,7 +26,7 @@ export default function NewBatchScreen() {
   }>();
   const { rolls, chemSets, batches, filmStocks, finishBatch, temperatureUnit } = useFilmLogStore();
 
-  const candidates = rolls.filter((r) => r.status === "To Develop" || r.status === "In Development");
+  const candidates = rolls.filter((r) => BATCH_STATUSES.includes(r.status));
   const rollProcess = (r: Roll): DevProcess | null => stockProcess(filmStocks.find((f) => f.id === r.filmStockId));
   const sets = params.process ? chemSets.filter((c) => c.process === params.process) : chemSets;
   // From a roll page, prefer a set for that roll's process.

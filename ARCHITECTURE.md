@@ -244,8 +244,8 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 - **Conflict resolution covers rolls and frames only.** Other entities still use last-write-wins upserts and can overwrite each other's changes.
 - **Whole-store persistence.** Every action rewrites every AsyncStorage key, which is fine at current data sizes.
 - **Large screen files.** `app/roll/[id].tsx` is about 2,300 lines and a candidate for splitting into components.
-- **Tests:** Jest unit tests cover `src/utils/` (`npm test`), and `supabase/tests/` holds SQL tests for the guarded write and delete functions. Screens aren't tested, and status-transition validation has no tests yet.
-- **Uploads stall if the phone locks mid-import**, and large TIFFs upload in one request with no byte-level progress; resumable uploads are a follow-up.
+- **Tests:** Jest unit tests cover `src/utils/` (`npm test`), and `supabase/tests/` holds SQL tests for the guarded write and delete functions. Status moves are tested in `src/utils/rollStatus.test.ts`. Screens aren't tested.
+- **The import screen keeps the screen on while uploading** (`useKeepAwakeWhile`), but switching to another app can still pause uploads. Large TIFFs upload in one request with no byte-level progress; resumable uploads are a follow-up.
 
 ---
 

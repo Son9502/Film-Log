@@ -33,7 +33,7 @@ _Last reviewed: 2026-11-14._
 | Database security fixes | ✅ `supabase/06_security_hardening.sql` run; SQL tests in `supabase/tests/` pass |
 | Phone ↔ web sync | ✅ Conflict-safe roll/frame sync (`supabase/13`–`15`, `18`); tested, the Sync panel settles with no differences |
 | Automated tests | ✅ Jest (`npm test`): calculator, chemistry, batches, expired film, summary, filters, spreadsheet export, upload checks, sync merge; SQL tests in `supabase/tests/` |
-| Public deployment | 🟡 Next step: host the web build (§5 and the README's Deployment section) |
+| Public deployment | ✅ Live at [filmlog-theta.vercel.app](https://filmlog-theta.vercel.app) (Vercel, redeploys on every push to `main`) |
 | Public GitHub repo | ✅ Created |
 
 ---
@@ -48,15 +48,17 @@ Not every roll visits every status. Which ones it visits depends on whether you 
 
 | Develop | Scan | Path |
 |---|---|---|
-| Me | Me | Shooting → In Development → In Scanning → Archived |
-| Lab | Me | Shooting → In Lab → In Scanning → Archived |
-| Me | Lab | Shooting → In Development → In Lab → Archived |
-| Lab | Lab | Shooting → In Lab → Archived |
+| Me | Me | Shooting → To Develop → In Development → In Scanning → Archived |
+| Lab | Me | Shooting → To Develop → In Lab → In Scanning → Archived |
+| Me | Lab | Shooting → To Develop → In Development → In Lab → Archived |
+| Lab | Lab | Shooting → To Develop → In Lab → Archived |
+
+The rules live in `NEXT_STATUSES` (`src/constants`) and `nextStatusOptions` (`src/utils/rollStatus.ts`), and `rollStatus.test.ts` checks every path above and rejects invalid moves.
 
 **How rolls move:**
 
-- **Finish a roll yourself:** from Shooting, "Develop it myself" moves the roll to In Development, where it waits to be added to a batch.
-- **Drop off at a lab:** a lab drop-off screen lists rolls that are Shooting or In Development. You tick the rolls you're dropping off, and for each one tick **Develop** and/or **Scan**. Those rolls move to In Lab. A drop-off records the lab's name, the date and, optionally, the cost.
+- **Finish a roll:** from Shooting, "Finish roll" moves it to To Develop. From there, "Develop myself" moves it to In Development, where it waits to be added to a batch (a batch also accepts rolls still in To Develop).
+- **Drop off at a lab:** "Send to lab" is offered for rolls that are To Develop or In Development. You tick the rolls you're dropping off, and for each one tick **Develop** and/or **Scan**. Those rolls move to In Lab. A drop-off records the lab's name, the date and, optionally, the cost.
 - **Finish a batch:** every roll in the batch moves from In Development to In Scanning.
 - **Pick up from the lab:** marking a drop-off as picked up moves rolls the lab only developed to In Scanning. Rolls the lab also scanned move to Archived once their scans are imported.
 - **Finish scanning:** after importing scans, "Mark as archived" moves a roll from In Scanning to Archived.
@@ -209,7 +211,7 @@ Jest (`jest-expo`, run with `npm test`) covers the core logic:
 - ✅ finishing a batch: roll statuses and the chemical set's count;
 - ✅ unit conversion;
 - ✅ expired-film compensation, spreadsheet export, upload checks and sync merging;
-- ❌ status changes: every path in §2, and rejecting invalid moves.
+- ✅ status changes: every path in §2, and rejecting invalid moves.
 
 Keep this logic in plain functions under `src/utils/` so it can be tested without rendering screens.
 
