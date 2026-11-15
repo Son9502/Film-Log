@@ -9,7 +9,8 @@ import { friendlyUploadError, logUploadError } from "@/utils/scanUploadSafety";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
-import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, NEXT_STATUSES, statusActionLabel } from "@/constants";
+import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, statusActionLabel } from "@/constants";
+import { nextStatusOptions } from "@/utils/rollStatus";
 import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName, pickableCameras } from "@/utils";
 import { Shot, RollStatus } from "@/types";
 import LabDropoffModal, { DropoffInput } from "@/components/LabDropoffModal";
@@ -1688,11 +1689,8 @@ export default function RollDetailScreen() {
     ["Fixer", roll.fixer],
     ["Wetting agent", roll.photoFlo == null ? null : roll.photoFlo ? "Yes" : "No"],
   ] as [string, string | null | undefined][]).filter((r): r is [string, string] => !!r[1]);
-  let nextStatuses = NEXT_STATUSES[roll.status] ?? [];
-  // Once we know what the lab is doing, only offer the step that follows.
-  if (roll.status === "In Lab" && dropoff) {
-    nextStatuses = dropoff.labScans ? ["Archived"] : ["In Scanning"];
-  }
+  // Once we know what the lab is doing, only the step that follows is offered.
+  const nextStatuses = nextStatusOptions(roll.status, dropoff);
   const previousLabs = Array.from(new Set(dropoffs.map((d) => d.labName)));
 
   async function handleQuickLog() {

@@ -14,6 +14,7 @@ import { ScanFileError, checkScanFile, checkZipSize, friendlyUploadError, logUpl
 import ScanUploadProgress from "@/components/ScanUploadProgress";
 import { backOrReplace } from "@/utils/navigation";
 import { useScanImportFrames } from "@/utils/useScanImportFrames";
+import { useKeepAwakeWhile } from "@/utils/useKeepAwakeWhile";
 import { assignScanFrames, identifyScanFiles } from "@/utils/scanImport";
 
 const IMAGE_EXTS = /\.(jpg|jpeg|png|heic|heif|tiff|tif)$/i;
@@ -39,6 +40,8 @@ export default function ImportScansScreen() {
   const roll = rolls.find((r) => r.id === id);
 
   const [step, setStep] = useState<"pick" | "preview" | "uploading" | "done">("pick");
+  // A locked screen stops uploads, so keep it on until they finish.
+  useKeepAwakeWhile(step === "uploading", "scan-import");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [assignments, setAssignments] = useState<Assignments>({});
   const [assigningFile, setAssigningFile] = useState<string | null>(null);

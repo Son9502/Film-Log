@@ -2,6 +2,8 @@
 
 A mobile-first app for film photographers to track rolls, log individual exposures, manage gear, and import scans — with cloud sync across devices via Supabase.
 
+**Live:** [filmlog-theta.vercel.app](https://filmlog-theta.vercel.app)
+
 > **Upgrading from the paused build?** Run `supabase/13`–`18` (see [Supabase Setup](#supabase-setup)), then reload the web app and restart Expo Go on every device. Rolls and frames then sync with conflict protection; Settings → Sync shows status and anything that needs your choice.
 
 ---
@@ -14,7 +16,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 - **Quick log** — tap ⚡ to instantly log a frame with GPS only; fill in the rest after developing
 - **Development records** — track developer, dilution, dev time, dev temperature, push/pull stops, fixer, and Photo-Flo per roll
 - **Scan attachment** — attach a scan to a frame, or bulk-import scans. On a phone, choose **Import from Photos** (tap order is kept) or **Import from Files** (one image, several, or ZIPs; Files also reaches iCloud Drive and Google Drive). Scans keep full quality and go to the Supabase `scans` bucket.
-- **Upload checks** — each file is checked before upload: it must really be a JPEG, PNG, TIFF or HEIC (judged by its contents, not its name), at most 50 MB per scan and 500 MB per ZIP. Uploads time out if they stall, retry once on a network error, and failed files can be retried from the import screen.
+- **Upload checks** — each file is checked before upload: it must really be a JPEG, PNG, TIFF or HEIC (judged by its contents, not its name), at most 50 MB per scan and 500 MB per ZIP. Uploads time out if they stall, retry once on a network error, and failed files can be retried from the import screen. The screen stays on while scans upload, so the phone locking doesn't stop them.
 - **Backfill scans** — when an import has more photos than logged frames, the missing frames are created for you.
 - **Scan import progress** — bulk uploads show the current file, elapsed wait, number of scans processed, and any failures; the bar advances per file, not by transferred bytes. Elapsed time does not confirm the connection is active. Keep the import screen open and verify the frame attachments on another device before deleting originals.
 - **Scan import filenames** — selected files with matching names are assigned independently. On native, ZIP images in different folders can have the same basename without overwriting each other.
