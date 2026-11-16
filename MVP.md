@@ -242,6 +242,9 @@ Keep this logic in plain functions under `src/utils/` so it can be tested withou
 
 ## 10. Not in v1
 
+The v2 plan is in [V2.md](V2.md).
+
+
 - **In-app development timer**, including background alerts.
 - **v2:** sharing scans by text, email, Instagram and other apps through the phone's share sheet; full achievements, community photo walks and other social features (the existing walks, profiles and badges stay as they are, hidden); AI helpers (an advice-only film advisor, on-device voice logging that never stores recordings, and frame order from scan file names); a Go/AWS scan-processing service; smart buying recommendations beyond simple stats.
 - **Code health:** split `app/roll/[id].tsx` (about 2,300 lines) into components, and add timestamp-based conflict resolution to sync.

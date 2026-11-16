@@ -473,6 +473,8 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 ## Roadmap
 
 > **v1 target:** see [MVP.md](MVP.md) for the v1 scope (development workflow, inventory, lab drop-offs, mobile), what is built so far, and the build order.
+>
+> **v2:** see [V2.md](V2.md) for the plan: workflow first, then the AI helpers, then sharing, with a security track alongside.
 
 | Phase | Status | Description |
 |---|---|---|
