@@ -59,6 +59,6 @@ export const INTRO_CARDS: IntroCard[] = [
   {
     icon: "✓",
     title: "Keep it safe",
-    body: "Settings → Export Data gives you a spreadsheet of every roll and frame, and Export Scans gives you the original files with their details.\n\nYou can see this intro again from Settings.",
+    body: "Settings → Export Data gives you a spreadsheet of every roll and frame, and Export Scans gives you the original files with their details.\n\nThis intro and answers to common questions are in Settings → Help & Feedback.",
   },
 ];

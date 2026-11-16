@@ -3,6 +3,8 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Switch, StyleSheet,
 } from "react-native";
 import { COLORS } from "@/constants";
+import { HelpLabel } from "@/components/HelpHint";
+import { HELP } from "@/utils/help";
 import { todayISO } from "@/utils";
 import { formatStops, parseDuration } from "@/utils/chemistry";
 import { developmentStops } from "@/utils/devCalc";
@@ -100,7 +102,7 @@ export default function DevelopedModal({
               <TextInput style={s.input} value={dilution} onChangeText={setDilution} placeholder="e.g. 1+1" placeholderTextColor={COLORS.textDim} />
             </View>
             <View style={s.col}>
-              <Text style={s.label}>Push / pull</Text>
+              <HelpLabel style={s.label} text={HELP.pushPull}>Push / pull</HelpLabel>
               <TextInput style={s.input} value={pushPull} onChangeText={setPushPull} placeholder="e.g. +1" placeholderTextColor={COLORS.textDim} />
             </View>
           </View>

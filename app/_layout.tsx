@@ -176,6 +176,7 @@ export default function RootLayout() {
         <Stack.Screen name="profile/[userId]" options={{ title: "Profile" }} />
         <Stack.Screen name="auth/login" options={{ title: "Account", headerShown: false }} />
         <Stack.Screen name="auth/signup" options={{ title: "Create Account", headerShown: false }} />
+        <Stack.Screen name="help" options={{ title: "Help & Feedback" }} />
         <Stack.Screen name="intro" options={{ title: "Welcome", headerShown: false, presentation: "fullScreenModal" }} />
         <Stack.Screen name="auth/reset-password" options={{ title: "Reset Password", headerShown: false }} />
       </Stack>
