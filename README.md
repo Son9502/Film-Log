@@ -119,6 +119,7 @@ Run everything below in Supabase Dashboard → SQL Editor, **in this order**:
 17. [`supabase/18_frame_realtime.sql`](supabase/18_frame_realtime.sql): live frame updates across devices
 18. [`supabase/19_film_stock_process.sql`](supabase/19_film_stock_process.sql): development process (B&W, C-41, E-6, ECN-2) on custom film stocks
 19. [`supabase/20_roll_expiry.sql`](supabase/20_roll_expiry.sql): film expiry date and extra exposure for age on rolls (rolls with these details stay on the device until it runs)
+20. [`supabase/21_privacy_and_scans.sql`](supabase/21_privacy_and_scans.sql): turns off public reads of rolls, frames and journals until v2 (they exposed frame locations), keeps the `scans` bucket private with server-side limits (50 MB, images only), and adds the scan UPDATE policy that re-uploads need (required)
 
 On a fresh project, skip the *Phase 8* walk block in **Migrations** and the walk policies in **RLS**: `01_walks.sql` replaces them with stricter policies. See [ARCHITECTURE.md §8](ARCHITECTURE.md#8-security-model--known-limitations).
 
@@ -341,6 +342,8 @@ create policy "read reviews"    on walk_reviews for select using (true);
 ```
 
 ### Storage bucket
+
+Create the bucket here, then run `supabase/21_privacy_and_scans.sql`, which sets its limits and replaces the policies below with the full set (including UPDATE, which re-uploading a scan needs).
 
 1. Supabase Dashboard → Storage → New bucket
 2. Name: `scans`, set to **Private**

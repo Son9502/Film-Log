@@ -9,7 +9,7 @@ import { friendlyUploadError, logUploadError } from "@/utils/scanUploadSafety";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
-import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, statusActionLabel } from "@/constants";
+import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, SOCIAL_ENABLED, statusActionLabel } from "@/constants";
 import { nextStatusOptions } from "@/utils/rollStatus";
 import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName, pickableCameras } from "@/utils";
 import { Shot, RollStatus } from "@/types";
@@ -1195,6 +1195,8 @@ function EditRollModal({
             </Text>
           )}
 
+          {/* Public rolls share frame locations, so this waits for the social features. */}
+          {SOCIAL_ENABLED && (<>
           <Text style={m.label}>Visibility</Text>
           <View style={m.toggleRow}>
             <View>
@@ -1208,6 +1210,7 @@ function EditRollModal({
               thumbColor={rollIsPublic ? COLORS.amber : COLORS.textDim}
             />
           </View>
+          </>)}
 
           {showDevFields && (<>
           <Text style={m.sectionLabel}>Development</Text>

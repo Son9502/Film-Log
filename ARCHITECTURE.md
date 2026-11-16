@@ -240,6 +240,7 @@ These are hand-run scripts, not a migration tool. Most are written to be re-runn
 
 **Known limitations / tech debt** (contributions welcome):
 
+- **Public rolls are off in v1.** `supabase/21_privacy_and_scans.sql` drops the public-read policies from `04_roll_visibility.sql`, because a public roll exposed its frames' GPS and notes to any signed-in user, and the Public switches are hidden behind `SOCIAL_ENABLED`. The same script keeps the `scans` bucket private and enforces 50 MB and image-only uploads on the server. `supabase/tests/privacy.sql` checks another user can't read a roll marked public.
 - **Security hardening lives in `supabase/06_security_hardening.sql`.** It keeps private profiles unreadable by others, drops the README's overlapping walk policies, replaces the counter RPCs with triggers, and ignores client writes to `completion_count`, `avg_rating` and `is_featured`. Run it on every project; a database built only from the README's SQL still has the old gaps.
 - **Conflict resolution covers rolls and frames only.** Other entities still use last-write-wins upserts and can overwrite each other's changes.
 - **Whole-store persistence.** Every action rewrites every AsyncStorage key, which is fine at current data sizes.

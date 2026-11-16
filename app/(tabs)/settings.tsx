@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { COLORS } from "@/constants";
+import { COLORS, SOCIAL_ENABLED } from "@/constants";
 import { useFilmLogStore } from "@/store";
 import { signOut } from "@/services/supabase";
 import { buildXlsx } from "@/utils/exportXlsx";
@@ -100,13 +100,15 @@ export default function SettingsScreen() {
         </View>
         <Text style={s.arrow}>›</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={s.row} onPress={() => router.push("/settings/profile")}>
-        <View>
-          <Text style={s.rowLabel}>My Profile</Text>
-          <Text style={s.rowSub}>Handle, bio &amp; public visibility</Text>
-        </View>
-        <Text style={s.arrow}>›</Text>
-      </TouchableOpacity>
+      {SOCIAL_ENABLED && (
+        <TouchableOpacity style={s.row} onPress={() => router.push("/settings/profile")}>
+          <View>
+            <Text style={s.rowLabel}>My Profile</Text>
+            <Text style={s.rowSub}>Handle, bio &amp; public visibility</Text>
+          </View>
+          <Text style={s.arrow}>›</Text>
+        </TouchableOpacity>
+      )}
 
       <Text style={[s.sectionLabel, { marginTop: 28 }]}>Units</Text>
       <View style={s.unitRow}>
