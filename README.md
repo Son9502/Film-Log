@@ -10,6 +10,7 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 
 ## Features
 
+- **First-run intro** — new accounts see seven short cards on how the app works (gear, loading a roll, logging frames, developing, importing scans, exporting); Settings → Show Intro opens them again
 - **Roll tracking** — log every roll from purchase through development across the statuses Shooting → To Develop → In Development / In Lab → In Scanning → Archived
 - **Roll names** — optional names are labels, not identifiers. The app warns about an existing name (ignoring case and surrounding spaces) when creating or editing a roll, but allows separate rolls to share it. The warning reflects rolls currently on the device; it is not a cloud-wide uniqueness guarantee.
 - **Frame logging** — record shutter speed, aperture, lighting condition, subject, notes, location, timestamp, flash used, filter (UV/polarizer/ND/colour), weather condition, star rating, and free-form tags per frame

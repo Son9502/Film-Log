@@ -93,6 +93,13 @@ export default function SettingsScreen() {
         </View>
         <Text style={s.arrow}>›</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={s.row} onPress={() => router.push("/intro")}>
+        <View>
+          <Text style={s.rowLabel}>Show Intro</Text>
+          <Text style={s.rowSub}>How Film Log works, in seven cards</Text>
+        </View>
+        <Text style={s.arrow}>›</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={s.row} onPress={() => router.push("/settings/stats")}>
         <View>
           <Text style={s.rowLabel}>Stats &amp; Badges</Text>
