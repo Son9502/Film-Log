@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useFilmLogStore } from "@/store";
-import { COLORS } from "@/constants";
+import { COLORS, SOCIAL_ENABLED } from "@/constants";
 import { formatDate, rollProgress, statusColors, pickableCameras } from "@/utils";
 import { Roll } from "@/types";
 import { ROLL_STATUS_LIST } from "@/constants";
@@ -83,7 +83,7 @@ export default function RollsScreen() {
           {item.backedUpAt && item.backedUpCount === item.shots.filter((x) => x.scanUri).length && item.backedUpCount > 0 && (
             <Text style={s.date}>☁ backed up</Text>
           )}
-          {item.isPublic && (
+          {SOCIAL_ENABLED && item.isPublic && (
             <View style={s.publicBadge}>
               <Text style={s.publicBadgeText}>Public</Text>
             </View>

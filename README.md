@@ -10,6 +10,8 @@ A mobile-first app for film photographers to track rolls, log individual exposur
 
 ## Features
 
+- **Help** — Settings → Help & Feedback has the intro, answers to common questions and a feedback link; "?" buttons explain statuses, push/pull and expired film where they appear
+- **First-run intro** — new accounts see seven short cards on how the app works (gear, loading a roll, logging frames, developing, importing scans, exporting); Settings → Help & Feedback opens them again
 - **Roll tracking** — log every roll from purchase through development across the statuses Shooting → To Develop → In Development / In Lab → In Scanning → Archived
 - **Roll names** — optional names are labels, not identifiers. The app warns about an existing name (ignoring case and surrounding spaces) when creating or editing a roll, but allows separate rolls to share it. The warning reflects rolls currently on the device; it is not a cloud-wide uniqueness guarantee.
 - **Frame logging** — record shutter speed, aperture, lighting condition, subject, notes, location, timestamp, flash used, filter (UV/polarizer/ND/colour), weather condition, star rating, and free-form tags per frame
@@ -119,6 +121,7 @@ Run everything below in Supabase Dashboard → SQL Editor, **in this order**:
 17. [`supabase/18_frame_realtime.sql`](supabase/18_frame_realtime.sql): live frame updates across devices
 18. [`supabase/19_film_stock_process.sql`](supabase/19_film_stock_process.sql): development process (B&W, C-41, E-6, ECN-2) on custom film stocks
 19. [`supabase/20_roll_expiry.sql`](supabase/20_roll_expiry.sql): film expiry date and extra exposure for age on rolls (rolls with these details stay on the device until it runs)
+20. [`supabase/21_privacy_and_scans.sql`](supabase/21_privacy_and_scans.sql): turns off public reads of rolls, frames and journals until v2 (they exposed frame locations), keeps the `scans` bucket private with server-side limits (50 MB, images only), and adds the scan UPDATE policy that re-uploads need (required)
 
 On a fresh project, skip the *Phase 8* walk block in **Migrations** and the walk policies in **RLS**: `01_walks.sql` replaces them with stricter policies. See [ARCHITECTURE.md §8](ARCHITECTURE.md#8-security-model--known-limitations).
 
@@ -342,6 +345,8 @@ create policy "read reviews"    on walk_reviews for select using (true);
 
 ### Storage bucket
 
+Create the bucket here, then run `supabase/21_privacy_and_scans.sql`, which sets its limits and replaces the policies below with the full set (including UPDATE, which re-uploading a scan needs).
+
 1. Supabase Dashboard → Storage → New bucket
 2. Name: `scans`, set to **Private**
 3. Add RLS policies:
@@ -468,6 +473,8 @@ Custom cameras and stocks can be added per-user and sync to Supabase.
 ## Roadmap
 
 > **v1 target:** see [MVP.md](MVP.md) for the v1 scope (development workflow, inventory, lab drop-offs, mobile), what is built so far, and the build order.
+>
+> **v2:** see [V2.md](V2.md) for the plan: workflow first, then the AI helpers, then sharing, with a security track alongside.
 
 | Phase | Status | Description |
 |---|---|---|

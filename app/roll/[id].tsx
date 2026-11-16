@@ -9,8 +9,10 @@ import { friendlyUploadError, logUploadError } from "@/utils/scanUploadSafety";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { useFilmLogStore } from "@/store";
-import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, statusActionLabel } from "@/constants";
+import { COLORS, LIGHTING_CONDITIONS, FRAME_COUNT_OPTIONS, FILTER_OPTIONS, WEATHER_CONDITIONS, MAX_STARS, SOCIAL_ENABLED, statusActionLabel } from "@/constants";
 import { nextStatusOptions } from "@/utils/rollStatus";
+import { HelpButton, HelpText } from "@/components/HelpHint";
+import { HELP } from "@/utils/help";
 import { uid, todayISO, formatDate, rollProgress, statusColors, validateFrameCountChange, hasDuplicateRollName, pickableCameras } from "@/utils";
 import { Shot, RollStatus } from "@/types";
 import LabDropoffModal, { DropoffInput } from "@/components/LabDropoffModal";
@@ -1195,6 +1197,8 @@ function EditRollModal({
             </Text>
           )}
 
+          {/* Public rolls share frame locations, so this waits for the social features. */}
+          {SOCIAL_ENABLED && (<>
           <Text style={m.label}>Visibility</Text>
           <View style={m.toggleRow}>
             <View>
@@ -1208,6 +1212,7 @@ function EditRollModal({
               thumbColor={rollIsPublic ? COLORS.amber : COLORS.textDim}
             />
           </View>
+          </>)}
 
           {showDevFields && (<>
           <Text style={m.sectionLabel}>Development</Text>
@@ -1621,6 +1626,7 @@ export default function RollDetailScreen() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingShotId, setEditingShotId] = useState<string | null>(null);
   const [quickLogging, setQuickLogging] = useState(false);
+  const [statusHelpOpen, setStatusHelpOpen] = useState(false);
   const [lightboxShotId, setLightboxShotId] = useState<string | null>(null);
 
   const roll = rolls.find((r) => r.id === id);
@@ -1881,12 +1887,17 @@ export default function RollDetailScreen() {
                 <View style={[s.badge, { backgroundColor: bg, borderColor: fg }]}>
                   <Text style={[s.badgeText, { color: fg }]}>{roll.status}</Text>
                 </View>
-                <View style={[s.badge, { backgroundColor: COLORS.bgCard, borderColor: COLORS.border }]}>
-                  <Text style={[s.badgeText, { color: roll.isPublic ? COLORS.amber : COLORS.textDim }]}>
-                    {roll.isPublic ? "🔓 Public" : "🔒 Private"}
-                  </Text>
-                </View>
+                {SOCIAL_ENABLED ? (
+                  <View style={[s.badge, { backgroundColor: COLORS.bgCard, borderColor: COLORS.border }]}>
+                    <Text style={[s.badgeText, { color: roll.isPublic ? COLORS.amber : COLORS.textDim }]}>
+                      {roll.isPublic ? "🔓 Public" : "🔒 Private"}
+                    </Text>
+                  </View>
+                ) : (
+                  <HelpButton open={statusHelpOpen} onPress={() => setStatusHelpOpen((o) => !o)} label="roll statuses" />
+                )}
               </View>
+              {statusHelpOpen && <HelpText>{HELP.statuses}</HelpText>}
               {nextStatuses.length > 0 && (
                 <View style={s.statusActions}>
                   {nextStatuses.map((next) => (

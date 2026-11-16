@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7,6 +7,7 @@ import { useFilmLogStore } from "@/store";
 import { COLORS, SOCIAL_ENABLED } from "@/constants";
 import { BadgeToast } from "@/components/BadgeToast";
 import { ACCOUNT_SWITCH_BLOCKED_MESSAGE, isAccountSwitchBlocked } from "@/utils/accountSyncSafety";
+import { introAction, introSeenKey } from "@/utils/intro";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -112,6 +113,27 @@ export default function RootLayout() {
     return subscribeToNewRolls(user.id);
   }, [user?.id]);
 
+  // First-run intro: once per account per device, for accounts with no rolls.
+  const rollCount = useFilmLogStore((st) => st.rolls.length);
+  const syncSettled = useFilmLogStore((st) =>
+    !!st.rollSync.lastSyncedAt || st.rollSync.state === "offline" || st.rollSync.state === "error" || st.rollSync.state === "setup-needed");
+  const introCheckedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ready || !user || segments[0] === "auth" || segments[0] === "intro") return;
+    if (introCheckedFor.current === user.id) return;
+    const userId = user.id;
+    let cancelled = false;
+    AsyncStorage.getItem(introSeenKey(userId)).then((seen) => {
+      if (cancelled) return;
+      const action = introAction({ seen: seen !== null, rollCount, syncSettled });
+      if (action === "wait") return;
+      introCheckedFor.current = userId;
+      if (action === "mark-seen") void AsyncStorage.setItem(introSeenKey(userId), "1");
+      if (action === "show") router.push("/intro");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [ready, user?.id, rollCount, syncSettled, segments]);
+
   // Auth gate: runs after init so we never redirect before knowing the real auth state
   useEffect(() => {
     if (!ready) return;
@@ -154,6 +176,8 @@ export default function RootLayout() {
         <Stack.Screen name="profile/[userId]" options={{ title: "Profile" }} />
         <Stack.Screen name="auth/login" options={{ title: "Account", headerShown: false }} />
         <Stack.Screen name="auth/signup" options={{ title: "Create Account", headerShown: false }} />
+        <Stack.Screen name="help" options={{ title: "Help & Feedback" }} />
+        <Stack.Screen name="intro" options={{ title: "Welcome", headerShown: false, presentation: "fullScreenModal" }} />
         <Stack.Screen name="auth/reset-password" options={{ title: "Reset Password", headerShown: false }} />
       </Stack>
       <BadgeToast />

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { COLORS } from "@/constants";
+import { HelpLabel } from "@/components/HelpHint";
+import { HELP } from "@/utils/help";
 import type { DevProcess } from "@/types";
 import { todayISO } from "@/utils";
 import { stopsText } from "@/utils/devCalc";
@@ -98,7 +100,7 @@ export default function ExpiredFilmField({
 
       {showComp && (
         <View style={s.stepRow}>
-          <Text style={s.stepLabel}>Extra exposure for age</Text>
+          <HelpLabel style={s.stepLabel} text={HELP.expired} containerStyle={s.stepLabelWrap}>Extra exposure for age</HelpLabel>
           <View style={s.stepper}>
             <TouchableOpacity style={s.stepBtn} disabled={compStops <= 0} onPress={() => setComp(compStops - 1 / 3)}>
               <Text style={[s.stepBtnText, compStops <= 0 && s.dim]}>−</Text>
@@ -134,6 +136,7 @@ const s = StyleSheet.create({
   applyText: { color: COLORS.bg, fontFamily: mono, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase" },
   stepRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 10 },
   stepLabel: { color: COLORS.textSecondary, fontFamily: mono, fontSize: 12 },
+  stepLabelWrap: { flex: 1, marginRight: 8 },
   stepper: { flexDirection: "row", alignItems: "center", gap: 6 },
   stepBtn: { borderWidth: 1, borderColor: COLORS.border, width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   stepBtnText: { color: COLORS.textPrimary, fontFamily: mono, fontSize: 16 },

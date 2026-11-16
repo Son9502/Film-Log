@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFilmLogStore } from "@/store";
-import { COLORS, FRAME_COUNT_OPTIONS, UNKNOWN_CAMERA_ID } from "@/constants";
+import { COLORS, FRAME_COUNT_OPTIONS, SOCIAL_ENABLED, UNKNOWN_CAMERA_ID } from "@/constants";
 import { uid, todayISO, rollsRemaining, hasDuplicateRollName, pickableCameras } from "@/utils";
 import ShotIsoField from "@/components/ShotIsoField";
 import ExpiredFilmField from "@/components/ExpiredFilmField";
@@ -134,7 +134,7 @@ export default function NewRollScreen() {
       frameCount: resolvedFrameCount,
       status: "Shooting" as const,
       shots: [],
-      isPublic,
+      isPublic: SOCIAL_ENABLED && isPublic,
       loadedAt: todayISO(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -303,7 +303,8 @@ export default function NewRollScreen() {
         numberOfLines={3}
       />
 
-      {/* Visibility */}
+      {/* Visibility: public rolls share frame locations, so it waits for the social features. */}
+      {SOCIAL_ENABLED && (<>
       <Text style={s.label}>Visibility</Text>
       <View style={s.toggleRow}>
         <View>
@@ -317,6 +318,7 @@ export default function NewRollScreen() {
           thumbColor={isPublic ? COLORS.amber : COLORS.textDim}
         />
       </View>
+      </>)}
 
       {/* Submit */}
       <TouchableOpacity style={s.submitBtn} onPress={handleSubmit}>

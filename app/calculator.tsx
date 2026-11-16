@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { useFilmLogStore } from "@/store";
 import Dropdown from "@/components/Dropdown";
 import { COLORS } from "@/constants";
+import { HelpLabel } from "@/components/HelpHint";
+import { HELP } from "@/utils/help";
 import {
   BW_STOCKS, BW_DEVELOPERS, BW_RECIPES, COLOR_KITS, COLOR_FILMS, PUSH_CURVES, BW_TEMP_CHART, BW_STEPS, bwPushCurve,
 } from "@/constants/devData";
@@ -143,7 +145,7 @@ export default function CalculatorScreen() {
 
       <View style={s.row}>
         <View style={s.col}>
-          <Text style={s.label}>Shot at ISO</Text>
+          <HelpLabel style={s.label} text={HELP.pushPull}>Shot at ISO</HelpLabel>
           <TextInput style={s.input} value={iso} onChangeText={setIso} keyboardType="number-pad" />
         </View>
         {isBW ? (
